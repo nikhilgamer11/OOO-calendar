@@ -1,0 +1,13 @@
+    /* Add basic Tailwind directives */
+    @tailwind base;
+    @tailwind components;
+    @tailwind utilities;
+
+    /* General styling for the page body */
+    body {
+        margin: 0;
+        font-family: 'Inter', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+    
