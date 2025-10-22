@@ -1,0 +1,13 @@
+      import React from 'react'
+      import ReactDOM from 'react-dom/client'
+      import App from './App.jsx'
+
+      // We don't need a separate CSS file for Tailwind, 
+      // but we do need this structure for the React app to launch.
+
+      ReactDOM.createRoot(document.getElementById('root')).render(
+        <React.StrictMode>
+          <App />
+        </React.StrictMode>,
+      )
+      
