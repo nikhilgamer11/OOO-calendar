@@ -15,6 +15,7 @@ const formatDate = (dateString) => {
   const date = new Date(dateString);
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
+<div className="p-4 rounded-xl bg-blue-600 text-white">Tailwind is working</div>
 
 // Hook to manage Firebase services and authentication state
 const useFirebase = () => {
