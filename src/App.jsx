@@ -300,7 +300,6 @@ function TabButton({ active, onClick, children }) {
 function Dot({ className }) {
   return <span className={cx("inline-block w-2 h-2 rounded-full bg-current", className)} />;
 }
-
 function MiniCalendar({ entries }) {
   const now = new Date();
   const year = now.getFullYear();
@@ -311,7 +310,7 @@ function MiniCalendar({ entries }) {
   const startWeekday = first.getDay(); // 0=Sun
   const daysInMonth = last.getDate();
 
-  // build map: ISO date -> array of people OOO
+  // Map ISO date -> unique people OOO
   const byDate = new Map();
   for (const e of entries) {
     const s = new Date(e.start);
@@ -320,8 +319,8 @@ function MiniCalendar({ entries }) {
     const end = new Date(Math.min(+ed, +last));
     for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const iso = d.toISOString().slice(0, 10);
-      if (!byDate.has(iso)) byDate.set(iso, []);
-      byDate.get(iso).push(e.name);
+      if (!byDate.has(iso)) byDate.set(iso, new Set());
+      byDate.get(iso).add(e.name);
     }
   }
 
@@ -329,45 +328,70 @@ function MiniCalendar({ entries }) {
   for (let i = 0; i < startWeekday; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
+  const todayIso = new Date().toISOString().slice(0, 10);
+
   return (
     <>
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-lg font-semibold">Mini Calendar ({monthName})</h2>
-        {/* little legend */}
-        <div className="flex items-center gap-2 text-xs text-gray-500">
-          <span className="inline-block w-3 h-3 rounded bg-indigo-100 border border-indigo-300" />
-          <span>OOO</span>
+        <div className="flex items-center gap-3 text-xs text-gray-500">
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block w-3 h-3 rounded bg-indigo-100 border border-indigo-300" />
+            <span>OOO day</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block w-3 h-3 rounded ring-2 ring-indigo-500" />
+            <span>Today</span>
+          </div>
         </div>
       </div>
 
       <div className="grid grid-cols-7 gap-2">
-        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((w) => (
+        {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((w) => (
           <div key={w} className="text-center text-xs font-semibold text-gray-600">{w}</div>
         ))}
+
         {cells.map((d, idx) => {
-          const date = d
-            ? new Date(year, month, d).toISOString().slice(0, 10)
-            : "";
-          const people = d ? byDate.get(date) || [] : [];
+          const iso = d ? new Date(year, month, d).toISOString().slice(0, 10) : "";
+          const peopleSet = d ? byDate.get(iso) : null;
+          const people = peopleSet ? Array.from(peopleSet) : [];
           const isOOO = people.length > 0;
+          const isToday = iso === todayIso;
+
+          const visible = people.slice(0, 3);
+          const more = Math.max(people.length - visible.length, 0);
 
           return (
             <div
               key={idx}
-              title={isOOO ? `${date}: ${people.join(", ")}` : date}
+              title={isOOO ? `${iso}: ${people.join(", ")}` : iso}
               className={cx(
-                "aspect-square rounded-xl border flex items-center justify-center text-sm relative",
+                "aspect-square rounded-xl border p-2 flex flex-col text-sm relative",
                 d ? "bg-white" : "bg-transparent border-transparent",
-                isOOO && "bg-indigo-100 border-indigo-300"
+                isOOO && "bg-indigo-50 border-indigo-300",
+                isToday && "ring-2 ring-indigo-500" // ← highlight today
               )}
             >
-              {d ?? ""}
+              {/* date number */}
+              <div className="text-xs text-gray-500">{d ?? ""}</div>
 
-              {/* count bubble */}
+              {/* names */}
               {isOOO && (
-                <span className="absolute -top-1 -right-1 text-[10px] leading-none px-1.5 py-0.5 rounded-full bg-indigo-600 text-white">
-                  {people.length}
-                </span>
+                <div className="mt-1 flex flex-wrap gap-1 overflow-hidden">
+                  {visible.map((name) => (
+                    <span
+                      key={name}
+                      className="px-2 py-0.5 rounded-full bg-white border text-[11px] leading-4 text-indigo-700"
+                    >
+                      {name}
+                    </span>
+                  ))}
+                  {more > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-white border text-[11px] leading-4 text-indigo-700">
+                      +{more}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           );
