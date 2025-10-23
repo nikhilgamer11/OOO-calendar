@@ -1,590 +1,886 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, query, onSnapshot, addDoc, serverTimestamp, doc, deleteDoc, updateDoc } from 'firebase/firestore';
-// Set log level to debug for full Firebase logging (useful for development)
-// import { setLogLevel } from 'firebase/firestore';
-// setLogLevel('debug');
+import React, { useState, useEffect, useMemo } from "react";
 
-// --- FIREBASE GLOBALS (Provided by the Canvas Environment) ---
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-// --- END FIREBASE GLOBALS ---
+// Helper function to concatenate class names
+const cx = (...a) => a.filter(Boolean).join(" ");
+const todayISO = new Date().toISOString().slice(0, 10);
 
-// Helper function to format dates as 'MMM DD'
-const formatDate = (dateString) => {
-  if (!dateString) return '';
-  return new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-};
+// Helper function for date calculations
+function isoNDaysFromNow(n) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
 
-// Helper function to get the name of the current month
-const getMonthName = (monthIndex) => {
-  const date = new Date(2000, monthIndex, 1);
-  return date.toLocaleString('en-US', { month: 'long' });
-};
+// 👉 Starter data with structured coverage items
+const seed = [
+  {
+    id: crypto.randomUUID(),
+    name: "Alex",
+    start: todayISO,
+    end: todayISO,
+    type: "Vacation",
+    notes: "Day off",
+    coverage: []
+  },
+  {
+    id: crypto.randomUUID(),
+    name: "Priya",
+    start: isoNDaysFromNow(1),
+    end: isoNDaysFromNow(3),
+    type: "Sick Leave",
+    notes: "Handover to Mike",
+    coverage: [
+      {
+        id: crypto.randomUUID(),
+        title: "Deal: ACME Q4 renewals",
+        link: "https://example.com/deal/006XXXXXXXXXXXX",
+        notes: "Renewal due EOM. Confirm pricing w/ finance.",
+        tasks: [
+          { id: crypto.randomUUID(), text: "Email decision-maker", done: false },
+          { id: crypto.randomUUID(), text: "Update next steps in CRM", done: true }
+        ]
+      },
+    ]
+  }
+];
 
-// ==============================================================================
-// 1. FIREBASE SETUP & AUTH HOOK
-// ==============================================================================
+// Helper component for displaying messages
+function StatusMessage({ message, type }) {
+  if (!message) return null;
+  const classes = type === 'error'
+    ? 'bg-red-100 text-red-800 border-red-200'
+    : 'bg-green-100 text-green-800 border-green-200';
 
-function useFirebaseSetup() {
-  const [db, setDb] = useState(null);
-  const [auth, setAuth] = useState(null);
-  const [userId, setUserId] = useState(null);
-  const [isAuthReady, setIsAuthReady] = useState(false);
+  return (
+    <div className={cx("p-3 rounded-xl border text-sm font-medium", classes)}>
+      {message}
+    </div>
+  );
+}
 
+
+/* ==============================================================================
+ * GOOGLE CALENDAR INTEGRATION SHELL
+ * ============================================================================== */
+
+async function connectToGoogleCalendar(setMessage, setEntries) {
+  setMessage({ text: "Initiating Google Calendar connection...", type: 'success' });
+
+  // WARNING: The following steps require client-side OAuth 2.0 implementation
+  // and cannot be fully executed in this environment.
+  // This structure shows where your final code would go:
+
+  try {
+    // 1. AUTHENTICATION (OAuth Flow)
+    // You would use the Google Identity Services client library (gapi.client or Google Sign-In)
+    // to prompt the user for permission (e.g., calendar.events.readonly scope)
+    // and retrieve an access token.
+    console.log("Step 1: Authenticating user and obtaining access token...");
+    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate loading
+
+    // 2. API REQUEST
+    // Use the obtained access token to fetch events from the Calendar API (events:list).
+    // You would filter for events tagged as 'OOO' or 'Vacation' within a set date range.
+    console.log("Step 2: Fetching OOO events from Google Calendar...");
+    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate loading
+    
+    // --- Mock Data Retrieval ---
+    const mockGoogleEvents = [
+        { name: "John Doe", start: isoNDaysFromNow(10), end: isoNDaysFromNow(12), type: "Vacation", notes: "Via GCal" },
+        { name: "Jane Smith", start: isoNDaysFromNow(15), end: isoNDaysFromNow(15), type: "Sick Leave", notes: "Via GCal" },
+    ];
+    // ---------------------------
+
+    // 3. DATA PROCESSING
+    // Merge the retrieved data (mockGoogleEvents) with the existing entries
+    setEntries(prevEntries => {
+        const existingNames = new Set(prevEntries.map(e => e.name));
+        const newEntries = mockGoogleEvents
+            .filter(g => !prevEntries.some(p => p.start === g.start && p.name === g.name)) // Simple de-duplication
+            .map(g => ({
+                id: crypto.randomUUID(),
+                ...g,
+                coverage: [],
+            }));
+        return [...prevEntries, ...newEntries];
+    });
+
+    setMessage({ text: "Successfully connected and synced 2 mock events from Google Calendar!", type: 'success' });
+
+  } catch (error) {
+    console.error("Google Calendar connection failed:", error);
+    setMessage({ text: "Error connecting to Google Calendar. Please check console.", type: 'error' });
+  }
+}
+
+
+/* ==============================================================================
+ * MAIN APPLICATION COMPONENT
+ * ============================================================================== */
+
+export default function App() {
+  // -------- state
+  const [entries, setEntries] = useState(seed);
+  const [form, setForm] = useState({ name: "", start: todayISO, end: todayISO, type: "Vacation", notes: "" });
+  const [filter, setFilter] = useState({ query: "", type: "All" });
+  const [tab, setTab] = useState("calendar"); // "calendar" | "requests" | "coverage"
+  const [message, setMessage] = useState(null); // Status message state (for form errors)
+
+  // ---- month navigation
+  const now = new Date();
+  const [viewYear, setViewYear] = useState(now.getFullYear());
+  const [viewMonth, setViewMonth] = useState(now.getMonth());
+
+  function prevMonth() {
+    if (viewMonth > 0) {
+      setViewMonth(viewMonth - 1);
+    } else {
+      setViewMonth(11);
+      setViewYear(viewYear - 1);
+    }
+  }
+
+  function nextMonth() {
+    if (viewMonth < 11) {
+      setViewMonth(viewMonth + 1);
+    } else {
+      setViewMonth(0);
+      setViewYear(viewYear + 1);
+    }
+  }
+
+  // -------- persistence (using localStorage)
   useEffect(() => {
-    try {
-      if (Object.keys(firebaseConfig).length === 0) {
-        console.error("Firebase config is missing. Cannot initialize the app.");
-        return;
-      }
-      const app = initializeApp(firebaseConfig);
-      const firestoreDb = getFirestore(app);
-      const firebaseAuth = getAuth(app);
-
-      setDb(firestoreDb);
-      setAuth(firebaseAuth);
-
-      // Authenticate the user
-      const authenticate = async () => {
-        try {
-          if (initialAuthToken) {
-            await signInWithCustomToken(firebaseAuth, initialAuthToken);
-          } else {
-            await signInAnonymously(firebaseAuth);
-          }
-        } catch (error) {
-          console.error("Authentication failed:", error);
-        }
-      };
-
-      authenticate();
-
-      // Auth state listener
-      const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
-        if (user) {
-          setUserId(user.uid);
-        } else {
-          // Fallback if sign-in fails, but should be rare with custom token/anonymous
-          setUserId(crypto.randomUUID());
-        }
-        setIsAuthReady(true);
-      });
-
-      return () => unsubscribe();
-    } catch (e) {
-      console.error("Failed to initialize Firebase:", e);
+    const saved = localStorage.getItem("ooo_entries");
+    if (saved) {
+      try { setEntries(JSON.parse(saved)); } catch (e) { console.error("Failed to load state from localStorage", e); }
     }
   }, []);
 
-  return { db, auth, userId, isAuthReady };
-}
-
-// ==============================================================================
-// 2. DATA HOOKS
-// ==============================================================================
-
-function useVacations(db, isAuthReady) {
-  const [vacations, setVacations] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  // Firestore Collection Path: Public data for all users to see
-  const collectionPath = `artifacts/${appId}/public/data/vacations`;
-
   useEffect(() => {
-    if (!db || !isAuthReady) return;
+    // Only save after a short delay to prevent thrashing
+    const handler = setTimeout(() => {
+      localStorage.setItem("ooo_entries", JSON.stringify(entries));
+    }, 50); 
+    return () => clearTimeout(handler);
+  }, [entries]);
 
-    const q = query(collection(db, collectionPath));
+  // -------- computed
+  const filtered = useMemo(() => {
+    return entries.filter((e) => {
+      // Collect text from notes and coverage items
+      const coverageText = Array.isArray(e.coverage)
+        ? e.coverage.map(c => [c.title, c.notes, ...(c.tasks || []).map(t => t.text)]).flat()
+        : [];
+      
+      const text = [e.name, e.type, e.notes, ...coverageText].join(" ").toLowerCase();
+      const q = (filter.query || "").toLowerCase();
+      const matchesText = !q || text.includes(q);
+      const matchesType = filter.type === "All" || e.type === filter.type;
+      return matchesText && matchesType;
+    }).sort((a, b) => new Date(a.start) - new Date(b.start)); // Sort by start date
+  }, [entries, filter]);
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      try {
-        const data = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          // Ensure dates are stringified if they were saved as Firebase Timestamps
-          startDate: doc.data().startDate,
-          endDate: doc.data().endDate,
-        }));
-        setVacations(data);
-        setIsLoading(false);
-      } catch (e) {
-        console.error("Error fetching vacations:", e);
-        setError("Failed to load data.");
-        setIsLoading(false);
-      }
-    });
+  const todaysOOO = useMemo(() => {
+    const t = new Date(todayISO);
+    return entries.filter((e) => new Date(e.start) <= t && t <= new Date(e.end));
+  }, [entries]);
 
-    return () => unsubscribe();
-  }, [db, isAuthReady]);
-
-  return { vacations, isLoading, error, collectionPath };
-}
-
-// ==============================================================================
-// 3. GOOGLE CALENDAR SIMULATION & INTEGRATION GUIDE
-// ==============================================================================
-
-/**
- * Placeholder for Google Calendar Integration.
- *
- * NOTE: For actual Google Calendar API integration, you would need to:
- * 1. Implement OAuth 2.0 flow to get user consent and an access token.
- * 2. Use the access token to call the Calendar API (e.g., `Events: list`).
- * 3. Filter for events marked as "Out of Office" or similar.
- * 4. Convert the fetched events into the `vacation` data structure.
- * 5. Update the Firestore database with the fetched data (or display it separately).
- */
-const fetchGoogleCalendarEvents = async (accessToken, userId) => {
-  console.log("Simulating Google Calendar API call...");
-  // This is where a real fetch call to Google Calendar API would go:
-  /*
-  try {
-    const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`
-      }
-    });
-    const data = await response.json();
-    const calendarEvents = data.items
-      .filter(event => event.summary.toLowerCase().includes('ooo') || event.summary.toLowerCase().includes('vacation'))
-      .map(event => ({
-        userId,
-        name: 'User Name from Google', // You'd need to get the name from the user profile
-        startDate: event.start.date || event.start.dateTime,
-        endDate: event.end.date || event.end.dateTime,
-        type: 'Google Sync',
-        coverageNotes: 'Synced from Google Calendar.',
-        status: 'Approved',
-        timestamp: new Date().getTime()
-      }));
-
-    // Logic to update Firestore with these events would follow here.
-    return calendarEvents;
-  } catch (error) {
-    console.error("Google Calendar API Error:", error);
-    return [];
+  // -------- actions
+  function addEntry(ev) {
+    ev.preventDefault();
+    const s = new Date(form.start), e = new Date(form.end);
+    setMessage(null); // Clear previous message
+    
+    if (!form.name || !form.start || !form.end) {
+      setMessage({ text: "Please fill in all required fields (Name, Start/End Date).", type: 'error' });
+      return;
+    }
+    
+    if (e < s) {
+      setMessage({ text: "End date cannot be before start date.", type: 'error' });
+      return;
+    }
+    
+    setEntries((prev) => [...prev, { id: crypto.randomUUID(), ...form, coverage: [] }]);
+    setForm((f) => ({ ...f, notes: "" }));
+    setMessage({ text: "Request submitted successfully!", type: 'success' });
+    setTab("requests"); // Switch to my requests after submitting
   }
-  */
-
-  // Mock return data for demonstration:
-  return new Promise(resolve => {
-    setTimeout(() => resolve([
-      {
-        userId: userId,
-        name: 'Mock Sync (Your Name)',
-        startDate: new Date(Date.now() + 86400000 * 30).toISOString().split('T')[0], // 30 days from now
-        endDate: new Date(Date.now() + 86400000 * 33).toISOString().split('T')[0],
-        type: 'Google Sync',
-        coverageNotes: 'This OOO was pulled from your mock Google Calendar.',
-        status: 'Approved',
-        timestamp: new Date().getTime()
-      }
-    ]), 1000);
-  });
-};
-
-// ==============================================================================
-// 4. COMPONENTS
-// ==============================================================================
-
-/**
- * Component to display the aggregated vacation schedule by month.
- */
-const CalendarView = React.memo(({ vacations, userId }) => {
-  const currentYear = new Date().getFullYear();
-
-  // Aggregate OOO requests by month
-  const groupedByMonth = useMemo(() => {
-    const months = Array.from({ length: 12 }, () => ({})); // Array of 12 empty objects
-    vacations
-      .filter(v => v.status === 'Approved')
-      .forEach(v => {
-        // Simple logic for sorting: if a request starts this year
-        const start = new Date(v.startDate);
-        if (start.getFullYear() === currentYear) {
-          const monthIndex = start.getMonth();
-          const personKey = v.name || 'Unknown User';
-          if (!months[monthIndex][personKey]) {
-            months[monthIndex][personKey] = [];
-          }
-          months[monthIndex][personKey].push({
-            id: v.id,
-            start: formatDate(v.startDate),
-            end: formatDate(v.endDate),
-            isMine: v.userId === userId,
-            coverage: v.coverageNotes,
-            type: v.type,
-          });
-        }
-      });
-    return months;
-  }, [vacations, userId, currentYear]);
+  
+  const removeEntry = (id) => setEntries((prev) => prev.filter((e) => e.id !== id));
 
   return (
-    <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      <h2 className="col-span-full text-2xl font-bold text-gray-800 mb-4">Vacation Calendar ({currentYear})</h2>
-      {groupedByMonth.map((monthData, index) => {
-        const monthName = getMonthName(index);
-        const hasOOO = Object.keys(monthData).length > 0;
-
-        return (
-          <div key={index} className="bg-white rounded-xl shadow-lg border border-gray-100 p-4">
-            <h3 className="text-xl font-semibold mb-3 text-indigo-700 border-b pb-2">{monthName}</h3>
-            {!hasOOO && (
-              <p className="text-gray-500 italic text-sm">No scheduled time off.</p>
-            )}
-            {hasOOO && (
-              <ul className="space-y-3">
-                {Object.entries(monthData).map(([name, days]) => (
-                  <li key={name} className="p-2 border-l-4 rounded-md" style={{ borderColor: days[0].isMine ? '#10B981' : '#6366F1', backgroundColor: days[0].isMine ? '#ECFDF5' : '#EEF2FF' }}>
-                    <div className="font-medium text-sm text-gray-800 flex justify-between">
-                      <span>{name} {days[0].isMine && <span className="text-xs bg-indigo-200 text-indigo-800 px-1.5 py-0.5 rounded-full">You</span>}</span>
-                      <span className="text-xs text-gray-500">{days.length} request(s)</span>
-                    </div>
-                    {days.map((day, i) => (
-                      <div key={i} className="text-xs text-gray-600 mt-1">
-                        <span className="font-mono bg-white px-1 rounded">{day.start} - {day.end}</span>
-                        <div className="mt-1 text-gray-700 italic text-xs truncate">
-                          Coverage: {day.coverage || 'None specified.'}
-                        </div>
-                      </div>
-                    ))}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-});
-
-/**
- * Component for submitting and managing OOO requests.
- */
-const OOOForm = ({ db, userId, collectionPath, currentUserInfo, setCurrentUserInfo, vacations }) => {
-  const [name, setName] = useState(currentUserInfo.name || '');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [coverageNotes, setCoverageNotes] = useState('');
-  const [type, setType] = useState('OOO');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [message, setMessage] = useState('');
-
-  // Filter for the current user's requests
-  const myRequests = useMemo(() => {
-    return vacations.filter(v => v.userId === userId).sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
-  }, [vacations, userId]);
-
-  // Keep user name synced with form and global state
-  useEffect(() => {
-    if (currentUserInfo.name) {
-      setName(currentUserInfo.name);
-    }
-  }, [currentUserInfo.name]);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!name || !startDate || !endDate) {
-      setMessage('Please fill in Name, Start Date, and End Date.');
-      return;
-    }
-
-    if (new Date(startDate) > new Date(endDate)) {
-      setMessage('Start Date cannot be after End Date.');
-      return;
-    }
-
-    setIsSubmitting(true);
-    setMessage('');
-    try {
-      // 1. Save the new request
-      await addDoc(collection(db, collectionPath), {
-        userId,
-        name: name.trim(),
-        startDate,
-        endDate,
-        type,
-        coverageNotes: coverageNotes.trim() || 'No specific coverage notes provided.',
-        status: 'Approved', // Simplified: Auto-approve for internal tracking
-        createdAt: serverTimestamp(),
-      });
-
-      // 2. Update the user's name in global state if it was empty
-      if (!currentUserInfo.name || currentUserInfo.name !== name.trim()) {
-        setCurrentUserInfo(prev => ({ ...prev, name: name.trim() }));
-      }
-
-      // 3. Reset form
-      setStartDate('');
-      setEndDate('');
-      setCoverageNotes('');
-      setType('OOO');
-      setMessage('Request submitted successfully!');
-
-    } catch (error) {
-      console.error('Error submitting request:', error);
-      setMessage('Failed to submit request. Check console for details.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (!db || !window.confirm('Are you sure you want to delete this request?')) return;
-    try {
-      await deleteDoc(doc(db, collectionPath, id));
-      setMessage('Request deleted.');
-    } catch (error) {
-      console.error('Error deleting request:', error);
-      setMessage('Failed to delete request.');
-    }
-  };
-
-  return (
-    <div className="p-4 grid grid-cols-1 lg:grid-cols-3 gap-8">
-      {/* Form Section (lg:col-span-1) */}
-      <div className="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg border border-gray-100 h-fit">
-        <h2 className="text-xl font-bold text-gray-800 mb-4 border-b pb-2">Submit New Request</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="flex flex-col">
-            <label htmlFor="name" className="text-sm font-medium text-gray-700">Your Name (for the calendar)</label>
-            <input
-              id="name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="mt-1 p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-              required
-              placeholder="e.g., Jane Doe"
+    <div className="min-h-screen text-gray-900 bg-gray-50 font-sans">
+      {/* HEADER with logo and tabs */}
+      <header className="bg-white border-b sticky top-0 z-20 shadow-sm">
+        <div className="mx-auto max-w-6xl px-4 py-4">
+          <div className="flex items-center gap-3">
+            {/* LearnUpon Logo Placeholder */}
+            <img 
+                src="https://placehold.co/48x48/00b2e8/ffffff?text=LU" 
+                alt="LearnUpon Logo" 
+                className="rounded-full shadow-md"
             />
-          </div>
-          <div className="flex space-x-4">
-            <div className="flex flex-col flex-1">
-              <label htmlFor="startDate" className="text-sm font-medium text-gray-700">Start Date</label>
-              <input
-                id="startDate"
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="mt-1 p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                required
-              />
-            </div>
-            <div className="flex flex-col flex-1">
-              <label htmlFor="endDate" className="text-sm font-medium text-gray-700">End Date</label>
-              <input
-                id="endDate"
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="mt-1 p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                required
-              />
-            </div>
-          </div>
-          <div className="flex flex-col">
-            <label htmlFor="type" className="text-sm font-medium text-gray-700">Time Off Type</label>
-            <select
-              id="type"
-              value={type}
-              onChange={(e) => setType(e.target.value)}
-              className="mt-1 p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 bg-white"
-            >
-              <option value="OOO">Out of Office (OOO)</option>
-              <option value="Remote">Remote Work</option>
-              <option value="Sick">Sick Day</option>
-            </select>
-          </div>
-          <div className="flex flex-col">
-            <label htmlFor="coverageNotes" className="text-sm font-medium text-gray-700">Coverage & Handoff Notes</label>
-            <textarea
-              id="coverageNotes"
-              value={coverageNotes}
-              onChange={(e) => setCoverageNotes(e.target.value)}
-              rows="3"
-              className="mt-1 p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="e.g., Check my email for priority filter. Brian is covering all Level 1 support tickets."
-            ></textarea>
-            <p className="text-xs text-gray-500 mt-1">This is the work handoff shared while you are away.</p>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-800">
+              Team OOO & Coverage
+            </h1>
           </div>
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className={`w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white transition-colors ${
-              isSubmitting ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
-            }`}
-          >
-            {isSubmitting ? 'Submitting...' : 'Add Request'}
-          </button>
-          {message && (
-            <div className={`p-3 rounded-md text-sm ${message.includes('success') ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-              {message}
-            </div>
-          )}
-        </form>
-      </div>
-
-      {/* My Requests Section (lg:col-span-2) */}
-      <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-lg border border-gray-100">
-        <h2 className="text-xl font-bold text-gray-800 mb-4 border-b pb-2">My Current Requests ({myRequests.length})</h2>
-        <p className="text-sm text-gray-500 mb-4">Your requests are automatically 'Approved' for team visibility.</p>
-        {myRequests.length === 0 ? (
-          <p className="text-gray-500 italic">You have no upcoming time-off requests.</p>
-        ) : (
-          <ul className="space-y-4">
-            {myRequests.map((req) => (
-              <li key={req.id} className="border-b pb-4 last:border-b-0 last:pb-0">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-lg font-semibold text-indigo-600">
-                      {req.type} | {formatDate(req.startDate)} - {formatDate(req.endDate)}
-                    </p>
-                    <p className="text-sm text-gray-800 mt-1 break-words">
-                      <span className="font-medium">Coverage Notes:</span> {req.coverageNotes}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleDelete(req.id)}
-                    className="ml-4 p-2 text-red-600 hover:text-red-800 transition-colors"
-                    title="Delete Request"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 10-2 0v6a1 1 0 102 0V8z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ==============================================================================
-// 5. MAIN APPLICATION COMPONENT
-// ==============================================================================
-
-const App = () => {
-  const { db, auth, userId, isAuthReady } = useFirebaseSetup();
-  const { vacations, isLoading, error } = useVacations(db, isAuthReady);
-
-  const [tab, setTab] = useState('calendar'); // 'calendar' or 'request'
-  const [currentUserInfo, setCurrentUserInfo] = useState({ name: '', isSynced: false });
-
-  // Placeholder for user name discovery (e.g., fetching from an internal user service)
-  useEffect(() => {
-    if (userId && !currentUserInfo.name) {
-      // In a real app, you might fetch user details here.
-      // For now, we'll let the user fill it in and save it to the session/state.
-      console.log(`User ID: ${userId} is ready.`);
-    }
-  }, [userId, currentUserInfo.name]);
-
-
-  // Placeholder for initial Google Calendar sync (Only runs once)
-  // This is where you would prompt the user for Calendar access token in a real app.
-  useEffect(() => {
-    if (userId && !currentUserInfo.isSynced) {
-        console.log("Simulating initial Google Calendar sync...");
-        // In a real app, you'd get the accessToken after OAuth flow.
-        const mockAccessToken = 'YOUR_GOOGLE_ACCESS_TOKEN_HERE';
-
-        // NOTE: In a real environment, you should only call this if you have a valid token.
-        // fetchGoogleCalendarEvents(mockAccessToken, userId).then(events => {
-        //    if (events.length > 0) {
-        //       console.log("Google Calendar events retrieved:", events);
-        //       // Logic to merge/add events to Firestore would go here.
-        //    }
-        // });
-
-        setCurrentUserInfo(prev => ({ ...prev, isSynced: true }));
-    }
-  }, [userId, currentUserInfo.isSynced]);
-
-
-  if (!isAuthReady) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
-        <div className="text-xl text-indigo-600 font-medium">Loading Application...</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return <div className="p-8 text-red-600 bg-red-50">Error: {error}</div>;
-  }
-
-  return (
-    <div className="min-h-screen bg-gray-50 font-sans antialiased">
-      {/* Header */}
-      <header className="bg-white shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <h1 className="text-3xl font-extrabold text-indigo-700 flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            Team OOO Tracker
-          </h1>
-          <div className="text-sm text-gray-500">
-            User ID: <span className="font-mono text-xs bg-gray-100 p-1 rounded">{userId}</span>
+          {/* Tabs */}
+          <div className="mt-4 flex gap-6 text-sm border-t pt-4">
+            <TabButton active={tab==="calendar"} onClick={() => setTab("calendar")}>Calendar View</TabButton>
+            <TabButton active={tab==="requests"} onClick={() => setTab("requests")}>My Requests & Coverage</TabButton>
+            <TabButton active={tab==="coverage"} onClick={() => setTab("coverage")}>Coverage Needed</TabButton>
           </div>
         </div>
       </header>
 
-      {/* Tabs */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+      {/* CONTENT */}
+      <div className="mx-auto max-w-6xl px-4 py-6 space-y-6">
+        {message && <StatusMessage message={message.text} type={message.type} />}
+
+        {tab === "calendar" && (
+          <main className="grid gap-6 md:grid-cols-2">
+            {/* Left card: form + connect */}
+            <section className="bg-white rounded-2xl shadow-xl p-6 h-fit border border-gray-100">
+              <h2 className="text-lg font-bold mb-2 text-indigo-700">Google Calendar Integration</h2>
+              <p className="text-sm text-gray-600 mb-4">Click below to pull existing time-off events from your calendar into the tracker. (Requires OAuth authentication)</p>
+              <button
+                className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm bg-blue-500 text-white font-medium hover:bg-blue-600 transition-colors focus:ring-2 ring-blue-300"
+                type="button"
+                onClick={() => connectToGoogleCalendar(setMessage, setEntries)}
+              >
+                Connect & Sync Google Calendar
+              </button>
+
+              <h2 className="text-lg font-bold mt-6 mb-2 border-t pt-4 text-indigo-700">Submit New Time Off Request</h2>
+              <form className="grid gap-4" onSubmit={addEntry}>
+                <div className="grid gap-1">
+                  <label className="text-sm font-medium">Your Name</label>
+                  <input
+                    className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    placeholder="e.g., Nikhil"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-1">
+                    <label className="text-sm font-medium">Start Date</label>
+                    <input
+                      type="date"
+                      className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500"
+                      value={form.start}
+                      onChange={(e) => setForm({ ...form, start: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <label className="text-sm font-medium">End Date</label>
+                    <input
+                      type="date"
+                      className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500"
+                      value={form.end}
+                      onChange={(e) => setForm({ ...form, end: e.target.value })}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-1">
+                  <label className="text-sm font-medium">Type</label>
+                  <select
+                    className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500"
+                    value={form.type}
+                    onChange={(e) => setForm({ ...form, type: e.target.value })}
+                  >
+                    <option>Vacation</option>
+                    <option>Sick Leave</option>
+                    <option>Public Holiday</option>
+                    <option>Training</option>
+                    <option>Other</option>
+                  </select>
+                </div>
+
+                <div className="grid gap-1">
+                  <label className="text-sm font-medium">Coverage & Handoff Notes (Basic)</label>
+                  <textarea
+                    className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500"
+                    rows="3"
+                    placeholder="e.g., Contact Mike for support. Detailed tasks can be added in the 'My Requests' tab."
+                    value={form.notes}
+                    onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  />
+                </div>
+
+                <button
+                  className="rounded-xl bg-indigo-600 text-white px-4 py-3 font-medium hover:bg-indigo-700 active:bg-indigo-800 shadow-md transition-colors"
+                  type="submit"
+                >
+                  Submit Request
+                </button>
+              </form>
+            </section>
+
+            {/* Right card: filter + list + today's OOO */}
+            <section className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
+              <h2 className="text-lg font-bold mb-4">Search & Filter</h2>
+              <input
+                className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500 w-full"
+                placeholder="Search by name, note, or coverage item…"
+                value={filter.query}
+                onChange={(e) => setFilter({ ...filter, query: e.target.value })}
+              />
+              <div className="flex gap-2 flex-wrap mt-3">
+                {["All", "Vacation", "Sick Leave", "Public Holiday", "Training", "Other"].map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    className={cx(
+                      "px-3 py-1.5 rounded-full border text-sm transition-colors",
+                      filter.type === t ? "bg-gray-900 text-white border-gray-900 shadow-md" : "bg-white hover:bg-gray-50"
+                    )}
+                    onClick={() => setFilter({ ...filter, type: t })}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+
+              {/* Today's OOO summary */}
+              <div className="mt-6 border-t pt-4">
+                <h3 className="font-semibold mb-2">Today’s OOO ({todaysOOO.length})</h3>
+                {todaysOOO.length === 0 && <div className="text-sm text-gray-500">No one is OOO today.</div>}
+                <div className="flex flex-wrap gap-2">
+                  {todaysOOO.map((e) => (
+                    <span key={e.id} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-50 text-red-700 border border-red-200 text-sm">
+                      <Dot className="text-red-500" /> {e.name} <span className="text-gray-500">({e.type})</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <h3 className="font-semibold mt-6 mb-2 border-t pt-4">Upcoming Time Off</h3>
+              <ul className="divide-y">
+                {filtered.length === 0 && (
+                  <li className="py-4 text-gray-500 text-sm">No entries match your filter.</li>
+                )}
+                {filtered.map((e) => (
+                  <li key={e.id} className="py-4 flex items-start justify-between gap-4">
+                    <div>
+                      <div className="font-medium">{e.name}</div>
+                      <div className="text-sm text-gray-600">{e.type} • {e.start} → {e.end}</div>
+                      {e.notes && <div className="text-sm mt-1 text-gray-700 truncate">{e.notes}</div>}
+                    </div>
+                    <button className="text-red-600 hover:text-red-700 text-sm shrink-0 p-1 rounded-full hover:bg-red-50" onClick={() => removeEntry(e.id)}>
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            {/* Mini calendar with month name */}
+            <section className="md:col-span-2 bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
+              <MiniCalendar
+                year={viewYear}
+                month={viewMonth}
+                entries={entries}
+                onPrev={prevMonth}
+                onNext={nextMonth}
+              />
+            </section>
+          </main>
+        )}
+
+        {tab === "requests" && (
+          <main className="mx-auto max-w-6xl py-6">
+            <section className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
+              <h2 className="text-2xl font-bold mb-4 text-indigo-700">My Requests & Coverage Setup</h2>
+              <p className="text-sm text-gray-600 mb-6">
+                Use this view to review and structure the detailed coverage items (tasks, links) for each time off entry.
+              </p>
+              <ul className="divide-y">
+                {entries.length === 0 && <li className="py-6 text-gray-500 italic">No time-off requests submitted yet.</li>}
+                {filtered.map((e) => (
+                  <li key={e.id} className="py-4">
+                    <RequestItem entry={e} setEntries={setEntries} removeEntry={removeEntry} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </main>
+        )}
+
+        {tab === "coverage" && (
+          <main className="mx-auto max-w-6xl py-6">
+            <section className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
+              <h2 className="text-2xl font-bold mb-4 text-indigo-700">Active Coverage Board</h2>
+              <p className="text-sm text-gray-600 mb-6">
+                Aggregated, actionable coverage items (deals, tasks) from everyone’s current time-off requests. Items can be edited and checked off here.
+              </p>
+              <CoverageBoard entries={entries} setEntries={setEntries} />
+            </section>
+          </main>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- APPLICATION COMPONENTS ---------------- */
+
+function TabButton({ active, onClick, children }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cx(
+        "relative px-3 py-2 rounded-lg transition-colors",
+        active
+          ? "text-indigo-700 font-semibold bg-indigo-100 shadow-inner"
+          : "text-gray-500 hover:text-indigo-700 hover:bg-gray-50"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Dot({ className }) {
+  return <span className={cx("inline-block w-2 h-2 rounded-full", className)} />;
+}
+
+function RequestItem({ entry, setEntries, removeEntry }) {
+  const [newTitle, setNewTitle] = useState("");
+  const [newNotes, setNewNotes] = useState("");
+  const [newLink, setNewLink] = useState("");
+
+  const coverageItems = Array.isArray(entry.coverage) ? entry.coverage : [];
+
+  const handleUpdate = (patch) => {
+    setEntries(prevEntries => prevEntries.map(e => {
+      if (e.id === entry.id) {
+        return { ...e, ...patch };
+      }
+      return e;
+    }));
+  };
+  
+  const handleAddCoverage = (e) => {
+    e.preventDefault();
+    if (!newTitle) return;
+
+    const newCoverageItem = {
+      id: crypto.randomUUID(),
+      title: newTitle,
+      link: newLink,
+      notes: newNotes,
+      tasks: []
+    };
+
+    handleUpdate({ 
+      coverage: [...coverageItems, newCoverageItem] 
+    });
+    setNewTitle("");
+    setNewNotes("");
+    setNewLink("");
+  };
+
+  return (
+    <div className="border p-4 rounded-xl bg-gray-50 shadow-md">
+      <div className="flex justify-between items-start mb-3 border-b pb-3">
+        <div>
+          <div className="font-bold text-lg text-indigo-700">{entry.name} - {entry.type}</div>
+          <div className="text-sm text-gray-600">
+            {entry.start} → {entry.end}
+          </div>
+        </div>
+        <button 
+          className="text-red-600 hover:text-red-700 text-sm shrink-0 p-1 rounded-full hover:bg-red-100" 
+          onClick={() => removeEntry(entry.id)}
+        >
+          Remove
+        </button>
+      </div>
+
+      <div className="text-sm text-gray-700 italic mb-4">
+        Basic Notes: {entry.notes || 'None provided.'}
+      </div>
+
+      <h4 className="font-semibold text-gray-800 mb-2 mt-4 border-t pt-4">Structured Handoff Items ({coverageItems.length})</h4>
+      
+      {/* Existing Coverage List */}
+      <ul className="space-y-3">
+        {coverageItems.map((c) => (
+          <li key={c.id} className="border p-3 rounded-lg bg-white shadow-sm">
+            <div className="font-medium text-indigo-600">
+              {c.title}
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              {c.notes || 'No notes.'}
+            </div>
+            <div className="mt-2 flex items-center gap-4">
+                {c.link && (
+                    <a href={c.link} target="_blank" rel="noreferrer" className="text-indigo-500 text-xs hover:underline">View Link</a>
+                )}
+                <span className="text-xs text-gray-500 ml-auto">
+                    {c.tasks.filter(t => t.done).length} / {c.tasks.length} tasks completed
+                </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+      
+      {/* Add New Coverage Form */}
+      <div className="mt-4 border-t pt-4">
+        <h4 className="text-sm font-semibold mb-2">Add New Coverage Item:</h4>
+        <form onSubmit={handleAddCoverage} className="space-y-2">
+            <input 
+                type="text" 
+                placeholder="Title (e.g., Q3 Client Renewal)"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                required
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-indigo-500"
+            />
+             <input 
+                type="url" 
+                placeholder="Link (e.g., Salesforce, Drive, Trello)"
+                value={newLink}
+                onChange={(e) => setNewLink(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-indigo-500"
+            />
+            <textarea 
+                placeholder="Detailed context/notes..."
+                value={newNotes}
+                onChange={(e) => setNewNotes(e.target.value)}
+                rows="2"
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-indigo-500"
+            />
             <button
-              onClick={() => setTab('calendar')}
-              className={`py-4 px-1 text-sm font-medium transition-colors ${
-                tab === 'calendar'
-                  ? 'border-indigo-500 text-indigo-600 border-b-2'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
+                type="submit"
+                className="w-full bg-indigo-500 text-white py-2 rounded-lg text-sm font-medium hover:bg-indigo-600 shadow-md"
             >
-              Calendar View {isLoading && <span className="animate-spin inline-block ml-1">...</span>}
+                Add Structured Item
             </button>
-            <button
-              onClick={() => setTab('request')}
-              className={`py-4 px-1 text-sm font-medium transition-colors ${
-                tab === 'request'
-                  ? 'border-indigo-500 text-indigo-600 border-b-2'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              My Requests & Coverage
-            </button>
-          </nav>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function MiniCalendar({ year, month, entries, onPrev, onNext }) {
+  const monthName = new Date(year, month, 1).toLocaleString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0);
+  const startWeekday = first.getDay(); // 0=Sun
+  const daysInMonth = last.getDate();
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  // Map ISO date -> unique people OOO (for the shown month)
+  const byDate = new Map();
+  for (const e of entries) {
+    const s = new Date(e.start);
+    const ed = new Date(e.end);
+    const start = new Date(Math.max(+s, +first));
+    const end = new Date(Math.min(+ed, +last));
+    if (end < first || start > last) continue;
+    for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const iso = d.toISOString().slice(0, 10);
+      if (!byDate.has(iso)) byDate.set(iso, new Set());
+      byDate.get(iso).add(e.name);
+    }
+  }
+
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onPrev}
+            className="px-2 py-1 rounded-lg border text-sm disabled:opacity-40 hover:bg-gray-50 transition-colors"
+            title="Previous month"
+          >
+            ‹
+          </button>
+          <h2 className="text-lg font-semibold min-w-[12ch] text-center">{monthName}</h2>
+          <button
+            type="button"
+            onClick={onNext}
+            className="px-2 py-1 rounded-lg border text-sm disabled:opacity-40 hover:bg-gray-50 transition-colors"
+            title="Next month"
+          >
+            ›
+          </button>
+        </div>
+
+        <div className="flex items-center gap-3 text-xs text-gray-500">
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block w-3 h-3 rounded bg-indigo-100 border border-indigo-300" />
+            <span>OOO day</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block w-3 h-3 rounded ring-2 ring-indigo-500" />
+            <span>Today</span>
+          </div>
         </div>
       </div>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        {tab === 'calendar' && (
-          <CalendarView vacations={vacations} userId={userId} />
-        )}
-        {tab === 'request' && (
-          <OOOForm
-            db={db}
-            userId={userId}
-            collectionPath={`artifacts/${appId}/public/data/vacations`}
-            currentUserInfo={currentUserInfo}
-            setCurrentUserInfo={setCurrentUserInfo}
-            vacations={vacations}
-          />
-        )}
-      </main>
+      <div className="grid grid-cols-7 gap-2">
+        {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((w) => (
+          <div key={w} className="text-center text-xs font-semibold text-gray-600">{w}</div>
+        ))}
+
+        {cells.map((d, idx) => {
+          const iso = d ? new Date(year, month, d).toISOString().slice(0, 10) : "";
+          const peopleSet = d ? byDate.get(iso) : null;
+          const people = peopleSet ? Array.from(peopleSet) : [];
+          const isOOO = people.length > 0;
+          const isToday = iso === todayIso;
+
+          const visible = people.slice(0, 3);
+          const more = Math.max(people.length - visible.length, 0);
+
+          return (
+            <div
+              key={idx}
+              title={isOOO ? `${iso}: ${people.join(", ")}` : iso}
+              className={cx(
+                "aspect-square rounded-xl border p-2 flex flex-col text-sm relative transition-shadow duration-100",
+                d ? "bg-white" : "bg-transparent border-transparent",
+                isOOO && "bg-indigo-50 border-indigo-300 shadow-sm",
+                isToday && "ring-2 ring-indigo-500 shadow-md"
+              )}
+            >
+              <div className="text-xs text-gray-500">{d ?? ""}</div>
+
+              {isOOO && (
+                <div className="mt-1 flex flex-wrap gap-1 overflow-hidden">
+                  {visible.map((name) => (
+                    <span
+                      key={name}
+                      className="px-2 py-0.5 rounded-full bg-white border text-[11px] leading-4 text-indigo-700 shadow-sm"
+                    >
+                      {name}
+                    </span>
+                  ))}
+                  {more > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-white border text-[11px] leading-4 text-indigo-700 shadow-sm">
+                      +{more}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+
+/* ---------------- COVERAGE BOARD COMPONENT ---------------- */
+
+function CoverageBoard({ entries, setEntries }) {
+  // Helper: normalize a single entry's coverage array to objects
+  function normalizedCoverageArray(entry) {
+    const list = Array.isArray(entry.coverage) ? entry.coverage : [];
+    return list.map((c) => {
+      // If it's the old string format, convert it
+      if (typeof c === "string") {
+        return { id: crypto.randomUUID(), title: c, link: "", notes: "", tasks: [] };
+      }
+      return {
+        id: c.id || crypto.randomUUID(),
+        title: c.title || "",
+        link: c.link || "",
+        notes: c.notes || "",
+        tasks: Array.isArray(c.tasks)
+          ? c.tasks.map((t) => ({ id: t.id || crypto.randomUUID(), text: t.text || "", done: !!t.done }))
+          : []
+      };
+    });
+  }
+
+  // --- ACTIONS ---
+
+  function updateCoverage(entryId, coverageId, patch) {
+    setEntries(prevEntries => prevEntries.map((e) => {
+      if (e.id !== entryId) return e;
+      const cov = normalizedCoverageArray(e).map((c) => (c.id === coverageId ? { ...c, ...patch } : c));
+      return { ...e, coverage: cov };
+    }));
+  }
+
+  function addTask(entryId, coverageId, text) {
+    setEntries(prevEntries => prevEntries.map(e => {
+        if (e.id !== entryId) return e;
+        const cov = normalizedCoverageArray(e);
+        const c = cov.find(x => x.id === coverageId);
+        if (!c) return e;
+
+        const updatedTasks = [...c.tasks, { id: crypto.randomUUID(), text, done: false }];
+        const updatedCov = cov.map(x => (x.id === coverageId ? {...c, tasks: updatedTasks} : x));
+        return {...e, coverage: updatedCov};
+    }));
+  }
+
+  function toggleTask(entryId, coverageId, taskId) {
+    setEntries(prevEntries => prevEntries.map(e => {
+        if (e.id !== entryId) return e;
+        const cov = normalizedCoverageArray(e);
+        const c = cov.find(x => x.id === coverageId);
+        if (!c) return e;
+
+        const updatedTasks = c.tasks.map(t => (t.id === taskId ? {...t, done: !t.done} : t));
+        const updatedCov = cov.map(x => (x.id === coverageId ? {...c, tasks: updatedTasks} : x));
+        return {...e, coverage: updatedCov};
+    }));
+  }
+
+  function removeTask(entryId, coverageId, taskId) {
+    setEntries(prevEntries => prevEntries.map(e => {
+        if (e.id !== entryId) return e;
+        const cov = normalizedCoverageArray(e);
+        const c = cov.find(x => x.id === coverageId);
+        if (!c) return e;
+        
+        const updatedTasks = c.tasks.filter(t => t.id !== taskId);
+        const updatedCov = cov.map(x => (x.id === coverageId ? {...c, tasks: updatedTasks} : x));
+        return {...e, coverage: updatedCov};
+    }));
+  }
+
+  // Flatten coverage items for display
+  const items = useMemo(() => {
+    const list = [];
+    for (const e of entries) {
+      const cov = normalizedCoverageArray(e);
+      for (const c of cov) {
+        // Only show items for time off that hasn't finished yet
+        if (new Date(e.end) >= new Date(todayISO)) {
+            list.push({
+                entryId: e.id,
+                by: e.name,
+                range: `${e.start} → ${e.end}`,
+                ...c
+            });
+        }
+      }
+    }
+    return list;
+  }, [entries]);
+
+
+  if (items.length === 0) {
+    return <div className="text-sm text-gray-500 italic">No active coverage items need attention.</div>;
+  }
+
+  return (
+    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {items.map((x) => (
+        <div key={x.id} className="border rounded-xl p-4 bg-gray-50 shadow-lg">
+          <div className="text-xs text-gray-500 mb-1">
+            Owner OOO: <span className="font-medium text-indigo-800">{x.by}</span>
+            <span className="ml-2 text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">{x.range}</span>
+          </div>
+
+          {/* Title + link */}
+          <div className="text-lg font-bold mb-2 mt-1">
+            {x.link ? (
+              <a href={x.link} target="_blank" rel="noreferrer" className="text-indigo-700 hover:underline">
+                {x.title || "Untitled"}
+              </a>
+            ) : (
+              x.title || "Untitled"
+            )}
+          </div>
+
+          {/* Notes */}
+          <div className="grid gap-1 mb-4 border-t pt-4">
+            <label className="text-xs font-semibold text-gray-600">Notes / Context (Click to edit)</label>
+            <textarea
+              rows={3}
+              className="border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 ring-indigo-500 bg-white"
+              placeholder="What needs to be done on this item?"
+              value={x.notes}
+              onChange={(e) => updateCoverage(x.entryId, x.id, { notes: e.target.value })}
+            />
+          </div>
+
+          {/* Checklist */}
+          <div className="grid gap-2 border-t pt-4">
+            <div className="text-sm font-semibold">Action Checklist</div>
+            <div className="flex flex-col gap-2">
+              {(x.tasks || []).map((t) => (
+                <label key={t.id} className="flex items-center gap-3 text-sm p-1 rounded-lg hover:bg-white transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={!!t.done}
+                    onChange={() => toggleTask(x.entryId, x.id, t.id)}
+                    className="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                  />
+                  <span className={t.done ? "line-through text-gray-500 flex-1" : "flex-1"}>
+                      {t.text}
+                  </span>
+                  <button
+                    type="button"
+                    className="text-xs text-red-600 hover:text-red-800 shrink-0"
+                    onClick={() => removeTask(x.entryId, x.id, t.id)}
+                    title="Remove Task"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 10-2 0v6a1 1 0 102 0V8z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </label>
+              ))}
+            </div>
+
+            {/* Add new task */}
+            <AddTaskRow onAdd={(text) => text && addTask(x.entryId, x.id, text)} />
+          </div>
+        </div>
+      ))}
     </div>
   );
-};
+}
 
-export default App;
+function AddTaskRow({ onAdd }) {
+  const [text, setText] = useState("");
+  return (
+    <form
+      className="flex items-center gap-2 mt-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (text.trim()) onAdd(text.trim());
+        setText("");
+      }}
+    >
+      <input
+        className="border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 ring-indigo-500 w-full"
+        placeholder="Add a checklist item…"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <button
+        className="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shrink-0"
+        type="submit"
+      >
+        Add
+      </button>
+    </form>
+  );
+}
