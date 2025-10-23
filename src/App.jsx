@@ -2,6 +2,10 @@ import React, { useEffect, useMemo, useState } from "react";
 
 const cx = (...a) => a.filter(Boolean).join(" ");
 const todayISO = new Date().toISOString().slice(0, 10);
+/ ✅ Add this line right below
+import importedOOO from "./data/ooo_import_october_2025.json";
+}, []);
+
 
 // 👉 Optional starter data (you can delete or edit these)
 // 👉 Optional starter data (can delete/modify later)
@@ -57,6 +61,28 @@ export default function App() {
   const [form, setForm] = useState({ name: "", start: todayISO, end: todayISO, type: "Vacation", notes: "" });
   const [filter, setFilter] = useState({ query: "", type: "All" });
   const [tab, setTab] = useState("calendar"); // "calendar" | "requests" | "coverage"
+
+  // ✅ Add imported OOO merge logic right below this line
+  useEffect(() => {
+    setEntries((prev) => {
+      const exists = (a, b) =>
+        a.name === b.name && a.start === b.start && a.end === b.end && a.type === b.type;
+      const merged = [...prev];
+      for (const n of importedOOO) {
+        if (!merged.some((m) => exists(m, n))) merged.push(n);
+      }
+      return merged;
+    });
+  }, []);
+
+  // -------- persistence (optional)
+  useEffect(() => {
+    const saved = localStorage.getItem("ooo_entries");
+    if (saved) {
+      try { setEntries(JSON.parse(saved)); } catch {}
+    }
+  }, []);
+
 
   // -------- persistence (optional)
   useEffect(() => {
