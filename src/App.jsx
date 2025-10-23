@@ -62,6 +62,44 @@ export default function App() {
   const [filter, setFilter] = useState({ query: "", type: "All" });
   const [tab, setTab] = useState("calendar"); // "calendar" | "requests" | "coverage"
 
+  // ---- month navigation (restricted to 2025)
+  const now = new Date();
+  const [viewYear, setViewYear] = useState(2025);
+  const [viewMonth, setViewMonth] = useState(
+    now.getFullYear() === 2025 ? now.getMonth() : 0 // current month if 2025, else Jan 2025
+  );
+
+  function prevMonth() {
+    if (viewYear !== 2025) return;
+    if (viewMonth > 0) setViewMonth(viewMonth - 1);
+  }
+
+  function nextMonth() {
+    if (viewYear !== 2025) return;
+    if (viewMonth < 11) setViewMonth(viewMonth + 1);
+  }
+
+  
+// ---- month navigation (restricted to 2025)
+const now = new Date();
+const [viewYear, setViewYear] = useState(2025);
+const [viewMonth, setViewMonth] = useState(
+  now.getFullYear() === 2025 ? now.getMonth() : 0 // current month if 2025, else Jan 2025
+);
+
+// go to previous month (Jan..Dec 2025 only)
+function prevMonth() {
+  if (viewYear !== 2025) return;
+  if (viewMonth > 0) setViewMonth(viewMonth - 1);
+}
+
+// go to next month (Jan..Dec 2025 only)
+function nextMonth() {
+  if (viewYear !== 2025) return;
+  if (viewMonth < 11) setViewMonth(viewMonth + 1);
+}
+
+
   // ✅ Add imported OOO merge logic right below this line
   useEffect(() => {
     setEntries((prev) => {
@@ -297,7 +335,13 @@ export default function App() {
 
           {/* Mini calendar with month name */}
           <section className="md:col-span-2 bg-white rounded-2xl shadow p-5">
-            <MiniCalendar entries={entries} />
+<MiniCalendar
+  year={viewYear}
+  month={viewMonth}
+  entries={entries}
+  onPrev={prevMonth}
+  onNext={nextMonth}
+/>
           </section>
         </main>
       )}
@@ -361,23 +405,25 @@ function TabButton({ active, onClick, children }) {
 function Dot({ className }) {
   return <span className={cx("inline-block w-2 h-2 rounded-full bg-current", className)} />;
 }
-function MiniCalendar({ entries }) {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth(); // 0-11
-  const monthName = now.toLocaleString(undefined, { month: "long", year: "numeric" });
+function MiniCalendar({ year, month, entries, onPrev, onNext }) {
+  const monthName = new Date(year, month, 1).toLocaleString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
   const first = new Date(year, month, 1);
   const last = new Date(year, month + 1, 0);
   const startWeekday = first.getDay(); // 0=Sun
   const daysInMonth = last.getDate();
+  const todayIso = new Date().toISOString().slice(0, 10);
 
-  // Map ISO date -> unique people OOO
+  // Map ISO date -> unique people OOO (for the shown month)
   const byDate = new Map();
   for (const e of entries) {
     const s = new Date(e.start);
     const ed = new Date(e.end);
     const start = new Date(Math.max(+s, +first));
     const end = new Date(Math.min(+ed, +last));
+    if (end < first || start > last) continue;
     for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const iso = d.toISOString().slice(0, 10);
       if (!byDate.has(iso)) byDate.set(iso, new Set());
@@ -389,12 +435,34 @@ function MiniCalendar({ entries }) {
   for (let i = 0; i < startWeekday; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const isAtStart = year === 2025 && month === 0;
+  const isAtEnd = year === 2025 && month === 11;
 
   return (
     <>
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-semibold">Mini Calendar ({monthName})</h2>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onPrev}
+            disabled={isAtStart}
+            className="px-2 py-1 rounded-lg border text-sm disabled:opacity-40"
+            title="Previous month"
+          >
+            ‹
+          </button>
+          <h2 className="text-lg font-semibold min-w-[12ch] text-center">{monthName}</h2>
+          <button
+            type="button"
+            onClick={onNext}
+            disabled={isAtEnd}
+            className="px-2 py-1 rounded-lg border text-sm disabled:opacity-40"
+            title="Next month"
+          >
+            ›
+          </button>
+        </div>
+
         <div className="flex items-center gap-3 text-xs text-gray-500">
           <div className="flex items-center gap-1.5">
             <span className="inline-block w-3 h-3 rounded bg-indigo-100 border border-indigo-300" />
@@ -406,6 +474,60 @@ function MiniCalendar({ entries }) {
           </div>
         </div>
       </div>
+
+      <div className="grid grid-cols-7 gap-2">
+        {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((w) => (
+          <div key={w} className="text-center text-xs font-semibold text-gray-600">{w}</div>
+        ))}
+
+        {cells.map((d, idx) => {
+          const iso = d ? new Date(year, month, d).toISOString().slice(0, 10) : "";
+          const peopleSet = d ? byDate.get(iso) : null;
+          const people = peopleSet ? Array.from(peopleSet) : [];
+          const isOOO = people.length > 0;
+          const isToday = iso === todayIso;
+
+          const visible = people.slice(0, 3);
+          const more = Math.max(people.length - visible.length, 0);
+
+          return (
+            <div
+              key={idx}
+              title={isOOO ? `${iso}: ${people.join(", ")}` : iso}
+              className={cx(
+                "aspect-square rounded-xl border p-2 flex flex-col text-sm relative",
+                d ? "bg-white" : "bg-transparent border-transparent",
+                isOOO && "bg-indigo-50 border-indigo-300",
+                isToday && "ring-2 ring-indigo-500"
+              )}
+            >
+              <div className="text-xs text-gray-500">{d ?? ""}</div>
+
+              {isOOO && (
+                <div className="mt-1 flex flex-wrap gap-1 overflow-hidden">
+                  {visible.map((name) => (
+                    <span
+                      key={name}
+                      className="px-2 py-0.5 rounded-full bg-white border text-[11px] leading-4 text-indigo-700"
+                    >
+                      {name}
+                    </span>
+                  ))}
+                  {more > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-white border text-[11px] leading-4 text-indigo-700">
+                      +{more}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 
       <div className="grid grid-cols-7 gap-2">
         {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((w) => (
