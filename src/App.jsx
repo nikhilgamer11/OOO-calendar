@@ -1,17 +1,20 @@
-import React, { useState, useEffect, useMemo } from "react";
+# Create a finalized App.jsx file for the user to download
+from textwrap import dedent
 
-// Helper function to concatenate class names
+code = dedent("""\
+import React, { useEffect, useMemo, useState } from "react";
+import importedOOO from "./data/ooo_import_october_2025.json";
+
 const cx = (...a) => a.filter(Boolean).join(" ");
 const todayISO = new Date().toISOString().slice(0, 10);
 
-// Helper function for date calculations
 function isoNDaysFromNow(n) {
   const d = new Date();
   d.setDate(d.getDate() + n);
   return d.toISOString().slice(0, 10);
 }
 
-// 👉 Starter data with structured coverage items
+// 👉 Optional starter data (you can delete or edit these)
 const seed = [
   {
     id: crypto.randomUUID(),
@@ -20,7 +23,6 @@ const seed = [
     end: todayISO,
     type: "Vacation",
     notes: "Day off",
-    coverage: []
   },
   {
     id: crypto.randomUUID(),
@@ -33,152 +35,92 @@ const seed = [
       {
         id: crypto.randomUUID(),
         title: "Deal: ACME Q4 renewals",
-        link: "https://example.com/deal/006XXXXXXXXXXXX",
+        link: "https://yourinstance.lightning.force.com/lightning/r/Opportunity/006XXXXXXXXXXXX/view",
         notes: "Renewal due EOM. Confirm pricing w/ finance.",
         tasks: [
           { id: crypto.randomUUID(), text: "Email decision-maker", done: false },
-          { id: crypto.randomUUID(), text: "Update next steps in CRM", done: true }
-        ]
+          { id: crypto.randomUUID(), text: "Update next steps", done: true },
+        ],
       },
-    ]
-  }
+      {
+        id: crypto.randomUUID(),
+        title: "Support: Tier-2 backlog triage",
+        link: "",
+        notes: "",
+        tasks: [],
+      },
+    ],
+  },
 ];
-
-// Helper component for displaying messages
-function StatusMessage({ message, type }) {
-  if (!message) return null;
-  const classes = type === 'error'
-    ? 'bg-red-100 text-red-800 border-red-200'
-    : 'bg-green-100 text-green-800 border-green-200';
-
-  return (
-    <div className={cx("p-3 rounded-xl border text-sm font-medium", classes)}>
-      {message}
-    </div>
-  );
-}
-
-
-/* ==============================================================================
- * GOOGLE CALENDAR INTEGRATION SHELL
- * ============================================================================== */
-
-async function connectToGoogleCalendar(setMessage, setEntries) {
-  setMessage({ text: "Initiating Google Calendar connection...", type: 'success' });
-
-  // WARNING: The following steps require client-side OAuth 2.0 implementation
-  // and cannot be fully executed in this environment.
-  // This structure shows where your final code would go:
-
-  try {
-    // 1. AUTHENTICATION (OAuth Flow)
-    // You would use the Google Identity Services client library (gapi.client or Google Sign-In)
-    // to prompt the user for permission (e.g., calendar.events.readonly scope)
-    // and retrieve an access token.
-    console.log("Step 1: Authenticating user and obtaining access token...");
-    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate loading
-
-    // 2. API REQUEST
-    // Use the obtained access token to fetch events from the Calendar API (events:list).
-    // You would filter for events tagged as 'OOO' or 'Vacation' within a set date range.
-    console.log("Step 2: Fetching OOO events from Google Calendar...");
-    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate loading
-    
-    // --- Mock Data Retrieval ---
-    const mockGoogleEvents = [
-        { name: "John Doe", start: isoNDaysFromNow(10), end: isoNDaysFromNow(12), type: "Vacation", notes: "Via GCal" },
-        { name: "Jane Smith", start: isoNDaysFromNow(15), end: isoNDaysFromNow(15), type: "Sick Leave", notes: "Via GCal" },
-    ];
-    // ---------------------------
-
-    // 3. DATA PROCESSING
-    // Merge the retrieved data (mockGoogleEvents) with the existing entries
-    setEntries(prevEntries => {
-        const existingNames = new Set(prevEntries.map(e => e.name));
-        const newEntries = mockGoogleEvents
-            .filter(g => !prevEntries.some(p => p.start === g.start && p.name === g.name)) // Simple de-duplication
-            .map(g => ({
-                id: crypto.randomUUID(),
-                ...g,
-                coverage: [],
-            }));
-        return [...prevEntries, ...newEntries];
-    });
-
-    setMessage({ text: "Successfully connected and synced 2 mock events from Google Calendar!", type: 'success' });
-
-  } catch (error) {
-    console.error("Google Calendar connection failed:", error);
-    setMessage({ text: "Error connecting to Google Calendar. Please check console.", type: 'error' });
-  }
-}
-
-
-/* ==============================================================================
- * MAIN APPLICATION COMPONENT
- * ============================================================================== */
 
 export default function App() {
   // -------- state
   const [entries, setEntries] = useState(seed);
-  const [form, setForm] = useState({ name: "", start: todayISO, end: todayISO, type: "Vacation", notes: "" });
+  const [form, setForm] = useState({
+    name: "",
+    start: todayISO,
+    end: todayISO,
+    type: "Vacation",
+    notes: "",
+  });
   const [filter, setFilter] = useState({ query: "", type: "All" });
   const [tab, setTab] = useState("calendar"); // "calendar" | "requests" | "coverage"
-  const [message, setMessage] = useState(null); // Status message state (for form errors)
 
-  // ---- month navigation
+  // ---- month navigation (restricted to 2025)
   const now = new Date();
-  const [viewYear, setViewYear] = useState(now.getFullYear());
-  const [viewMonth, setViewMonth] = useState(now.getMonth());
-
+  const [viewYear, setViewYear] = useState(2025);
+  const [viewMonth, setViewMonth] = useState(
+    now.getFullYear() === 2025 ? now.getMonth() : 0 // current month if 2025, else Jan 2025
+  );
   function prevMonth() {
-    if (viewMonth > 0) {
-      setViewMonth(viewMonth - 1);
-    } else {
-      setViewMonth(11);
-      setViewYear(viewYear - 1);
-    }
+    if (viewYear !== 2025) return;
+    if (viewMonth > 0) setViewMonth(viewMonth - 1);
   }
-
   function nextMonth() {
-    if (viewMonth < 11) {
-      setViewMonth(viewMonth + 1);
-    } else {
-      setViewMonth(0);
-      setViewYear(viewYear + 1);
-    }
+    if (viewYear !== 2025) return;
+    if (viewMonth < 11) setViewMonth(viewMonth + 1);
   }
 
-  // -------- persistence (using localStorage)
+  // ---- merge imported OOO once
+  useEffect(() => {
+    setEntries((prev) => {
+      const exists = (a, b) =>
+        a.name === b.name &&
+        a.start === b.start &&
+        a.end === b.end &&
+        a.type === b.type;
+      const merged = [...prev];
+      for (const n of importedOOO) {
+        if (!merged.some((m) => exists(m, n))) merged.push(n);
+      }
+      return merged;
+    });
+  }, []);
+
+  // ---- persistence
   useEffect(() => {
     const saved = localStorage.getItem("ooo_entries");
     if (saved) {
-      try { setEntries(JSON.parse(saved)); } catch (e) { console.error("Failed to load state from localStorage", e); }
+      try {
+        setEntries(JSON.parse(saved));
+      } catch {}
     }
   }, []);
-
   useEffect(() => {
-    // Only save after a short delay to prevent thrashing
-    const handler = setTimeout(() => {
-      localStorage.setItem("ooo_entries", JSON.stringify(entries));
-    }, 50); 
-    return () => clearTimeout(handler);
+    localStorage.setItem("ooo_entries", JSON.stringify(entries));
   }, [entries]);
 
   // -------- computed
   const filtered = useMemo(() => {
     return entries.filter((e) => {
-      // Collect text from notes and coverage items
-      const coverageText = Array.isArray(e.coverage)
-        ? e.coverage.map(c => [c.title, c.notes, ...(c.tasks || []).map(t => t.text)]).flat()
-        : [];
-      
-      const text = [e.name, e.type, e.notes, ...coverageText].join(" ").toLowerCase();
+      const text = [e.name, e.type, e.notes, ...(e.coverage || [])]
+        .join(" ")
+        .toLowerCase();
       const q = (filter.query || "").toLowerCase();
       const matchesText = !q || text.includes(q);
       const matchesType = filter.type === "All" || e.type === filter.type;
       return matchesText && matchesType;
-    }).sort((a, b) => new Date(a.start) - new Date(b.start)); // Sort by start date
+    });
   }, [entries, filter]);
 
   const todaysOOO = useMemo(() => {
@@ -189,259 +131,285 @@ export default function App() {
   // -------- actions
   function addEntry(ev) {
     ev.preventDefault();
-    const s = new Date(form.start), e = new Date(form.end);
-    setMessage(null); // Clear previous message
-    
-    if (!form.name || !form.start || !form.end) {
-      setMessage({ text: "Please fill in all required fields (Name, Start/End Date).", type: 'error' });
-      return;
-    }
-    
+    const s = new Date(form.start),
+      e = new Date(form.end);
     if (e < s) {
-      setMessage({ text: "End date cannot be before start date.", type: 'error' });
+      alert("End date cannot be before start date.");
       return;
     }
-    
-    setEntries((prev) => [...prev, { id: crypto.randomUUID(), ...form, coverage: [] }]);
+    setEntries((prev) => [...prev, { id: crypto.randomUUID(), ...form }]);
     setForm((f) => ({ ...f, notes: "" }));
-    setMessage({ text: "Request submitted successfully!", type: 'success' });
-    setTab("requests"); // Switch to my requests after submitting
+    setTab("calendar");
   }
-  
-  const removeEntry = (id) => setEntries((prev) => prev.filter((e) => e.id !== id));
+  const removeEntry = (id) =>
+    setEntries((prev) => prev.filter((e) => e.id !== id));
 
   return (
-    <div className="min-h-screen text-gray-900 bg-gray-50 font-sans">
-      {/* HEADER with logo and tabs */}
-      <header className="bg-white border-b sticky top-0 z-20 shadow-sm">
-        <div className="mx-auto max-w-6xl px-4 py-4">
+    <div className="min-h-screen text-gray-900">
+      {/* HEADER with icon + tabs */}
+      <header className="bg-white border-b sticky top-0 z-20">
+        <div className="mx-auto max-w-6xl px-4 py-5">
           <div className="flex items-center gap-3">
-            {/* LearnUpon Logo Placeholder */}
-            <img 
-                src="https://placehold.co/48x48/00b2e8/ffffff?text=LU" 
-                alt="LearnUpon Logo" 
-                className="rounded-full shadow-md"
-            />
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-800">
-              Team OOO & Coverage
+            {/* calendar icon */}
+            <svg width="28" height="28" viewBox="0 0 24 24" className="text-indigo-600">
+              <path
+                fill="currentColor"
+                d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h1V3a1 1 0 0 1 1-1m12 6H5v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1zM5 7h14V6a1 1 0 0 0-1-1h-1v1a1 1 0 1 1-2 0V5H8v1a1 1 0 1 1-2 0V5H5a1 1 0 0 0-1 1z"
+              />
+            </svg>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-indigo-700">
+              Team OOO Tracker
             </h1>
           </div>
 
           {/* Tabs */}
-          <div className="mt-4 flex gap-6 text-sm border-t pt-4">
-            <TabButton active={tab==="calendar"} onClick={() => setTab("calendar")}>Calendar View</TabButton>
-            <TabButton active={tab==="requests"} onClick={() => setTab("requests")}>My Requests & Coverage</TabButton>
-            <TabButton active={tab==="coverage"} onClick={() => setTab("coverage")}>Coverage Needed</TabButton>
+          <div className="mt-4 flex gap-6 text-sm">
+            <TabButton active={tab === "calendar"} onClick={() => setTab("calendar")}>
+              Calendar View
+            </TabButton>
+            <TabButton active={tab === "requests"} onClick={() => setTab("requests")}>
+              My Requests & Coverage
+            </TabButton>
+            <TabButton active={tab === "coverage"} onClick={() => setTab("coverage")}>
+              Coverage Needed
+            </TabButton>
           </div>
         </div>
       </header>
 
       {/* CONTENT */}
-      <div className="mx-auto max-w-6xl px-4 py-6 space-y-6">
-        {message && <StatusMessage message={message.text} type={message.type} />}
+      {tab === "calendar" && (
+        <main className="mx-auto max-w-6xl px-4 py-6 grid gap-6 md:grid-cols-2">
+          {/* Left card: form + connect */}
+          <section className="bg-white rounded-2xl shadow p-5">
+            <h2 className="text-lg font-semibold mb-2">Google Calendar Integration</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              The app is set up for manual entry. Connect for automatic sync (mock).
+            </p>
+            <button
+              className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm hover:bg-gray-50"
+              type="button"
+              onClick={() => alert("Mock connect")}
+            >
+              Connect & Sync from Google Calendar (Mock)
+            </button>
 
-        {tab === "calendar" && (
-          <main className="grid gap-6 md:grid-cols-2">
-            {/* Left card: form + connect */}
-            <section className="bg-white rounded-2xl shadow-xl p-6 h-fit border border-gray-100">
-              <h2 className="text-lg font-bold mb-2 text-indigo-700">Google Calendar Integration</h2>
-              <p className="text-sm text-gray-600 mb-4">Click below to pull existing time-off events from your calendar into the tracker. (Requires OAuth authentication)</p>
-              <button
-                className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm bg-blue-500 text-white font-medium hover:bg-blue-600 transition-colors focus:ring-2 ring-blue-300"
-                type="button"
-                onClick={() => connectToGoogleCalendar(setMessage, setEntries)}
-              >
-                Connect & Sync Google Calendar
-              </button>
+            <h2 className="text-lg font-semibold mt-6 mb-2">Submit Time Off Request</h2>
+            <form className="grid gap-4" onSubmit={addEntry}>
+              <div className="grid gap-1">
+                <label className="text-sm font-medium">Your Name</label>
+                <input
+                  className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="e.g., Nikhil"
+                  required
+                />
+              </div>
 
-              <h2 className="text-lg font-bold mt-6 mb-2 border-t pt-4 text-indigo-700">Submit New Time Off Request</h2>
-              <form className="grid gap-4" onSubmit={addEntry}>
+              <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-1">
-                  <label className="text-sm font-medium">Your Name</label>
+                  <label className="text-sm font-medium">Start Date</label>
                   <input
+                    type="date"
                     className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500"
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    placeholder="e.g., Nikhil"
+                    value={form.start}
+                    onChange={(e) => setForm({ ...form, start: e.target.value })}
                     required
                   />
                 </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-1">
-                    <label className="text-sm font-medium">Start Date</label>
-                    <input
-                      type="date"
-                      className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500"
-                      value={form.start}
-                      onChange={(e) => setForm({ ...form, start: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="grid gap-1">
-                    <label className="text-sm font-medium">End Date</label>
-                    <input
-                      type="date"
-                      className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500"
-                      value={form.end}
-                      onChange={(e) => setForm({ ...form, end: e.target.value })}
-                      required
-                    />
-                  </div>
-                </div>
-
                 <div className="grid gap-1">
-                  <label className="text-sm font-medium">Type</label>
-                  <select
+                  <label className="text-sm font-medium">End Date</label>
+                  <input
+                    type="date"
                     className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500"
-                    value={form.type}
-                    onChange={(e) => setForm({ ...form, type: e.target.value })}
-                  >
-                    <option>Vacation</option>
-                    <option>Sick Leave</option>
-                    <option>Public Holiday</option>
-                    <option>Training</option>
-                    <option>Other</option>
-                  </select>
-                </div>
-
-                <div className="grid gap-1">
-                  <label className="text-sm font-medium">Coverage & Handoff Notes (Basic)</label>
-                  <textarea
-                    className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500"
-                    rows="3"
-                    placeholder="e.g., Contact Mike for support. Detailed tasks can be added in the 'My Requests' tab."
-                    value={form.notes}
-                    onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                    value={form.end}
+                    onChange={(e) => setForm({ ...form, end: e.target.value })}
+                    required
                   />
                 </div>
+              </div>
 
-                <button
-                  className="rounded-xl bg-indigo-600 text-white px-4 py-3 font-medium hover:bg-indigo-700 active:bg-indigo-800 shadow-md transition-colors"
-                  type="submit"
+              <div className="grid gap-1">
+                <label className="text-sm font-medium">Type</label>
+                <select
+                  className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500"
+                  value={form.type}
+                  onChange={(e) => setForm({ ...form, type: e.target.value })}
                 >
-                  Submit Request
+                  <option>Vacation</option>
+                  <option>Sick Leave</option>
+                  <option>Public Holiday</option>
+                  <option>Training</option>
+                  <option>Other</option>
+                </select>
+              </div>
+
+              <div className="grid gap-1">
+                <label className="text-sm font-medium">Coverage & Handoff Notes</label>
+                <textarea
+                  className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500"
+                  rows="3"
+                  placeholder="e.g., Contact Mike for support. Q3 report is on Drive."
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                />
+              </div>
+
+              <button
+                className="rounded-xl bg-indigo-600 text-white px-4 py-2 font-medium hover:bg-indigo-700 active:bg-indigo-800"
+                type="submit"
+              >
+                Submit Request
+              </button>
+            </form>
+          </section>
+
+          {/* Right card: filter + list + today's OOO */}
+          <section className="bg-white rounded-2xl shadow p-5">
+            <h2 className="text-lg font-semibold mb-4">Search & Filter</h2>
+            <input
+              className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500 w-full"
+              placeholder="Search by name, note, or type…"
+              value={filter.query}
+              onChange={(e) => setFilter({ ...filter, query: e.target.value })}
+            />
+            <div className="flex gap-2 flex-wrap mt-3">
+              {["All", "Vacation", "Sick Leave", "Public Holiday", "Training", "Other"].map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  className={cx(
+                    "px-3 py-1.5 rounded-full border text-sm",
+                    filter.type === t ? "bg-gray-900 text-white border-gray-900" : "bg-white hover:bg-gray-50"
+                  )}
+                  onClick={() => setFilter({ ...filter, type: t })}
+                >
+                  {t}
                 </button>
-              </form>
-            </section>
+              ))}
+            </div>
 
-            {/* Right card: filter + list + today's OOO */}
-            <section className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-              <h2 className="text-lg font-bold mb-4">Search & Filter</h2>
-              <input
-                className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-indigo-500 w-full"
-                placeholder="Search by name, note, or coverage item…"
-                value={filter.query}
-                onChange={(e) => setFilter({ ...filter, query: e.target.value })}
-              />
-              <div className="flex gap-2 flex-wrap mt-3">
-                {["All", "Vacation", "Sick Leave", "Public Holiday", "Training", "Other"].map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    className={cx(
-                      "px-3 py-1.5 rounded-full border text-sm transition-colors",
-                      filter.type === t ? "bg-gray-900 text-white border-gray-900 shadow-md" : "bg-white hover:bg-gray-50"
-                    )}
-                    onClick={() => setFilter({ ...filter, type: t })}
+            {/* Today's OOO summary */}
+            <div className="mt-6">
+              <h3 className="font-semibold mb-2">Today’s OOO</h3>
+              {todaysOOO.length === 0 && (
+                <div className="text-sm text-gray-500">No one is OOO today.</div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {todaysOOO.map((e) => (
+                  <span
+                    key={e.id}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-50 text-red-700 border border-red-200 text-sm"
                   >
-                    {t}
-                  </button>
+                    <Dot className="text-red-500" /> {e.name}{" "}
+                    <span className="text-gray-500">({e.type})</span>
+                  </span>
                 ))}
               </div>
+            </div>
 
-              {/* Today's OOO summary */}
-              <div className="mt-6 border-t pt-4">
-                <h3 className="font-semibold mb-2">Today’s OOO ({todaysOOO.length})</h3>
-                {todaysOOO.length === 0 && <div className="text-sm text-gray-500">No one is OOO today.</div>}
-                <div className="flex flex-wrap gap-2">
-                  {todaysOOO.map((e) => (
-                    <span key={e.id} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-50 text-red-700 border border-red-200 text-sm">
-                      <Dot className="text-red-500" /> {e.name} <span className="text-gray-500">({e.type})</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <h3 className="font-semibold mt-6 mb-2 border-t pt-4">Upcoming Time Off</h3>
-              <ul className="divide-y">
-                {filtered.length === 0 && (
-                  <li className="py-4 text-gray-500 text-sm">No entries match your filter.</li>
-                )}
-                {filtered.map((e) => (
-                  <li key={e.id} className="py-4 flex items-start justify-between gap-4">
-                    <div>
-                      <div className="font-medium">{e.name}</div>
-                      <div className="text-sm text-gray-600">{e.type} • {e.start} → {e.end}</div>
-                      {e.notes && <div className="text-sm mt-1 text-gray-700 truncate">{e.notes}</div>}
+            <h3 className="font-semibold mt-6 mb-2">Team Calendar View</h3>
+            <ul className="divide-y">
+              {filtered.length === 0 && (
+                <li className="py-6 text-gray-500 text-sm">No entries yet.</li>
+              )}
+              {filtered.map((e) => (
+                <li key={e.id} className="py-4 flex items-start justify-between gap-4">
+                  <div>
+                    <div className="font-medium">{e.name}</div>
+                    <div className="text-sm text-gray-600">
+                      {e.type} • {e.start} → {e.end}
                     </div>
-                    <button className="text-red-600 hover:text-red-700 text-sm shrink-0 p-1 rounded-full hover:bg-red-50" onClick={() => removeEntry(e.id)}>
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
+                    {e.notes && <div className="text-sm mt-1">{e.notes}</div>}
+                    {Array.isArray(e.coverage) && e.coverage.length > 0 && (
+                      <ul className="mt-2 text-sm list-disc pl-5 text-indigo-700">
+                        {e.coverage.map((c, i) => (
+                          <li key={i}>{typeof c === "string" ? c : c.title}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <button
+                    className="text-red-600 hover:text-red-700 text-sm"
+                    onClick={() => removeEntry(e.id)}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
 
-            {/* Mini calendar with month name */}
-            <section className="md:col-span-2 bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-              <MiniCalendar
-                year={viewYear}
-                month={viewMonth}
-                entries={entries}
-                onPrev={prevMonth}
-                onNext={nextMonth}
-              />
-            </section>
-          </main>
-        )}
+          {/* Mini calendar with month nav */}
+          <section className="md:col-span-2 bg-white rounded-2xl shadow p-5">
+            <MiniCalendar
+              year={viewYear}
+              month={viewMonth}
+              entries={entries}
+              onPrev={prevMonth}
+              onNext={nextMonth}
+            />
+          </section>
+        </main>
+      )}
 
-        {tab === "requests" && (
-          <main className="mx-auto max-w-6xl py-6">
-            <section className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-              <h2 className="text-2xl font-bold mb-4 text-indigo-700">My Requests & Coverage Setup</h2>
-              <p className="text-sm text-gray-600 mb-6">
-                Use this view to review and structure the detailed coverage items (tasks, links) for each time off entry.
-              </p>
-              <ul className="divide-y">
-                {entries.length === 0 && <li className="py-6 text-gray-500 italic">No time-off requests submitted yet.</li>}
-                {/* FIX: Use entries list instead of filtered list here */}
-                {entries.map((e) => ( 
-                  <li key={e.id} className="py-4">
-                    <RequestItem entry={e} setEntries={setEntries} removeEntry={removeEntry} />
-                  </li>
-                ))}
-              </ul>
-            </section>
-          </main>
-        )}
+      {tab === "requests" && (
+        <main className="mx-auto max-w-6xl px-4 py-6">
+          <section className="bg-white rounded-2xl shadow p-5">
+            <h2 className="text-lg font-semibold mb-4">My Requests & Coverage</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              A simple list of your submissions. (In a real app, we’d filter by the signed-in user.)
+            </p>
+            <ul className="divide-y">
+              {entries.map((e) => (
+                <li key={e.id} className="py-4">
+                  <div className="font-medium">
+                    {e.name} — {e.type}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {e.start} → {e.end}
+                  </div>
+                  {e.notes && <div className="text-sm mt-1">{e.notes}</div>}
+                  {Array.isArray(e.coverage) && e.coverage.length > 0 && (
+                    <ul className="mt-2 text-sm list-disc pl-5 text-indigo-700">
+                      {e.coverage.map((c, i) => (
+                        <li key={i}>{typeof c === "string" ? c : c.title}</li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        </main>
+      )}
 
-        {tab === "coverage" && (
-          <main className="mx-auto max-w-6xl py-6">
-            <section className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-              <h2 className="text-2xl font-bold mb-4 text-indigo-700">Active Coverage Board</h2>
-              <p className="text-sm text-gray-600 mb-6">
-                Aggregated, actionable coverage items (deals, tasks) from everyone’s current time-off requests. Items can be edited and checked off here.
-              </p>
-              <CoverageBoard entries={entries} setEntries={setEntries} />
-            </section>
-          </main>
-        )}
-      </div>
+      {tab === "coverage" && (
+        <main className="mx-auto max-w-6xl px-4 py-6">
+          <section className="bg-white rounded-2xl shadow p-5">
+            <h2 className="text-lg font-semibold mb-4">Coverage Needed</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Aggregated items from everyone’s requests (e.g., deals, support queues, approvals).
+            </p>
+            <CoverageBoard entries={entries} />
+          </section>
+        </main>
+      )}
     </div>
   );
 }
 
-/* ---------------- APPLICATION COMPONENTS ---------------- */
+/* ---------------- components ---------------- */
 
 function TabButton({ active, onClick, children }) {
   return (
     <button
       onClick={onClick}
       className={cx(
-        "relative px-3 py-2 rounded-lg transition-colors",
+        "relative px-3 py-2 rounded-lg",
         active
-          ? "text-indigo-700 font-semibold bg-indigo-100 shadow-inner"
+          ? "text-indigo-700 font-semibold bg-indigo-50"
           : "text-gray-500 hover:text-indigo-700 hover:bg-gray-50"
       )}
     >
@@ -451,126 +419,7 @@ function TabButton({ active, onClick, children }) {
 }
 
 function Dot({ className }) {
-  return <span className={cx("inline-block w-2 h-2 rounded-full", className)} />;
-}
-
-function RequestItem({ entry, setEntries, removeEntry }) {
-  const [newTitle, setNewTitle] = useState("");
-  const [newNotes, setNewNotes] = useState("");
-  const [newLink, setNewLink] = useState("");
-
-  const coverageItems = Array.isArray(entry.coverage) ? entry.coverage : [];
-
-  const handleUpdate = (patch) => {
-    setEntries(prevEntries => prevEntries.map(e => {
-      if (e.id === entry.id) {
-        return { ...e, ...patch };
-      }
-      return e;
-    }));
-  };
-  
-  const handleAddCoverage = (e) => {
-    e.preventDefault();
-    if (!newTitle) return;
-
-    const newCoverageItem = {
-      id: crypto.randomUUID(),
-      title: newTitle,
-      link: newLink,
-      notes: newNotes,
-      tasks: []
-    };
-
-    handleUpdate({ 
-      coverage: [...coverageItems, newCoverageItem] 
-    });
-    setNewTitle("");
-    setNewNotes("");
-    setNewLink("");
-  };
-
-  return (
-    <div className="border p-4 rounded-xl bg-gray-50 shadow-md">
-      <div className="flex justify-between items-start mb-3 border-b pb-3">
-        <div>
-          <div className="font-bold text-lg text-indigo-700">{entry.name} - {entry.type}</div>
-          <div className="text-sm text-gray-600">
-            {entry.start} → {entry.end}
-          </div>
-        </div>
-        <button 
-          className="text-red-600 hover:text-red-700 text-sm shrink-0 p-1 rounded-full hover:bg-red-100" 
-          onClick={() => removeEntry(entry.id)}
-        >
-          Remove
-        </button>
-      </div>
-
-      <div className="text-sm text-gray-700 italic mb-4">
-        Basic Notes: {entry.notes || 'None provided.'}
-      </div>
-
-      <h4 className="font-semibold text-gray-800 mb-2 mt-4 border-t pt-4">Structured Handoff Items ({coverageItems.length})</h4>
-      
-      {/* Existing Coverage List */}
-      <ul className="space-y-3">
-        {coverageItems.map((c) => (
-          <li key={c.id} className="border p-3 rounded-lg bg-white shadow-sm">
-            <div className="font-medium text-indigo-600">
-              {c.title}
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              {c.notes || 'No notes.'}
-            </div>
-            <div className="mt-2 flex items-center gap-4">
-                {c.link && (
-                    <a href={c.link} target="_blank" rel="noreferrer" className="text-indigo-500 text-xs hover:underline">View Link</a>
-                )}
-                <span className="text-xs text-gray-500 ml-auto">
-                    {c.tasks.filter(t => t.done).length} / {c.tasks.length} tasks completed
-                </span>
-            </div>
-          </li>
-        ))}
-      </ul>
-      
-      {/* Add New Coverage Form */}
-      <div className="mt-4 border-t pt-4">
-        <h4 className="text-sm font-semibold mb-2">Add New Coverage Item:</h4>
-        <form onSubmit={handleAddCoverage} className="space-y-2">
-            <input 
-                type="text" 
-                placeholder="Title (e.g., Q3 Client Renewal)"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                required
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-indigo-500"
-            />
-             <input 
-                type="url" 
-                placeholder="Link (e.g., Salesforce, Drive, Trello)"
-                value={newLink}
-                onChange={(e) => setNewLink(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-indigo-500"
-            />
-            <textarea 
-                placeholder="Detailed context/notes..."
-                value={newNotes}
-                onChange={(e) => setNewNotes(e.target.value)}
-                rows="2"
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-indigo-500"
-            />
-            <button
-                type="submit"
-                className="w-full bg-indigo-500 text-white py-2 rounded-lg text-sm font-medium hover:bg-indigo-600 shadow-md"
-            >
-                Add Structured Item
-            </button>
-        </form>
-      </div>
-    </div>
-  );
+  return <span className={cx("inline-block w-2 h-2 rounded-full bg-current", className)} />;
 }
 
 function MiniCalendar({ year, month, entries, onPrev, onNext }) {
@@ -603,6 +452,9 @@ function MiniCalendar({ year, month, entries, onPrev, onNext }) {
   for (let i = 0; i < startWeekday; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
+  const isAtStart = year === 2025 && month === 0;
+  const isAtEnd = year === 2025 && month === 11;
+
   return (
     <>
       <div className="flex items-center justify-between mb-4">
@@ -610,7 +462,8 @@ function MiniCalendar({ year, month, entries, onPrev, onNext }) {
           <button
             type="button"
             onClick={onPrev}
-            className="px-2 py-1 rounded-lg border text-sm disabled:opacity-40 hover:bg-gray-50 transition-colors"
+            disabled={isAtStart}
+            className="px-2 py-1 rounded-lg border text-sm disabled:opacity-40"
             title="Previous month"
           >
             ‹
@@ -619,7 +472,8 @@ function MiniCalendar({ year, month, entries, onPrev, onNext }) {
           <button
             type="button"
             onClick={onNext}
-            className="px-2 py-1 rounded-lg border text-sm disabled:opacity-40 hover:bg-gray-50 transition-colors"
+            disabled={isAtEnd}
+            className="px-2 py-1 rounded-lg border text-sm disabled:opacity-40"
             title="Next month"
           >
             ›
@@ -639,8 +493,10 @@ function MiniCalendar({ year, month, entries, onPrev, onNext }) {
       </div>
 
       <div className="grid grid-cols-7 gap-2">
-        {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((w) => (
-          <div key={w} className="text-center text-xs font-semibold text-gray-600">{w}</div>
+        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((w) => (
+          <div key={w} className="text-center text-xs font-semibold text-gray-600">
+            {w}
+          </div>
         ))}
 
         {cells.map((d, idx) => {
@@ -658,10 +514,10 @@ function MiniCalendar({ year, month, entries, onPrev, onNext }) {
               key={idx}
               title={isOOO ? `${iso}: ${people.join(", ")}` : iso}
               className={cx(
-                "aspect-square rounded-xl border p-2 flex flex-col text-sm relative transition-shadow duration-100",
+                "aspect-square rounded-xl border p-2 flex flex-col text-sm relative",
                 d ? "bg-white" : "bg-transparent border-transparent",
-                isOOO && "bg-indigo-50 border-indigo-300 shadow-sm",
-                isToday && "ring-2 ring-indigo-500 shadow-md"
+                isOOO && "bg-indigo-50 border-indigo-300",
+                isToday && "ring-2 ring-indigo-500"
               )}
             >
               <div className="text-xs text-gray-500">{d ?? ""}</div>
@@ -671,13 +527,13 @@ function MiniCalendar({ year, month, entries, onPrev, onNext }) {
                   {visible.map((name) => (
                     <span
                       key={name}
-                      className="px-2 py-0.5 rounded-full bg-white border text-[11px] leading-4 text-indigo-700 shadow-sm"
+                      className="px-2 py-0.5 rounded-full bg-white border text-[11px] leading-4 text-indigo-700"
                     >
                       {name}
                     </span>
                   ))}
                   {more > 0 && (
-                    <span className="px-2 py-0.5 rounded-full bg-white border text-[11px] leading-4 text-indigo-700 shadow-sm">
+                    <span className="px-2 py-0.5 rounded-full bg-white border text-[11px] leading-4 text-indigo-700">
                       +{more}
                     </span>
                   )}
@@ -691,15 +547,16 @@ function MiniCalendar({ year, month, entries, onPrev, onNext }) {
   );
 }
 
+function CoverageBoard({ entries }) {
+  const [localEntries, setLocalEntries] = useState(entries);
 
-/* ---------------- COVERAGE BOARD COMPONENT ---------------- */
+  // Keep in sync with parent state (and persist via parent's effect)
+  useEffect(() => setLocalEntries(entries), [entries]);
 
-function CoverageBoard({ entries, setEntries }) {
-  // Helper: normalize a single entry's coverage array to objects
+  // Normalize coverage array to objects
   function normalizedCoverageArray(entry) {
     const list = Array.isArray(entry.coverage) ? entry.coverage : [];
     return list.map((c) => {
-      // If it's the old string format, convert it
       if (typeof c === "string") {
         return { id: crypto.randomUUID(), title: c, link: "", notes: "", tasks: [] };
       }
@@ -710,96 +567,86 @@ function CoverageBoard({ entries, setEntries }) {
         notes: c.notes || "",
         tasks: Array.isArray(c.tasks)
           ? c.tasks.map((t) => ({ id: t.id || crypto.randomUUID(), text: t.text || "", done: !!t.done }))
-          : []
+          : [],
       };
     });
   }
 
-  // --- ACTIONS ---
+  // Flatten coverage items for display
+  const items = [];
+  for (const e of localEntries) {
+    const cov = normalizedCoverageArray(e);
+    for (const c of cov) {
+      items.push({
+        entryId: e.id,
+        by: e.name,
+        range: `${e.start} → ${e.end}`,
+        ...c,
+      });
+    }
+  }
 
+  // Update helpers
   function updateCoverage(entryId, coverageId, patch) {
-    setEntries(prevEntries => prevEntries.map((e) => {
+    const next = localEntries.map((e) => {
       if (e.id !== entryId) return e;
       const cov = normalizedCoverageArray(e).map((c) => (c.id === coverageId ? { ...c, ...patch } : c));
       return { ...e, coverage: cov };
-    }));
+    });
+    setLocalEntries(next);
   }
 
   function addTask(entryId, coverageId, text) {
-    setEntries(prevEntries => prevEntries.map(e => {
-        if (e.id !== entryId) return e;
-        const cov = normalizedCoverageArray(e);
-        const c = cov.find(x => x.id === coverageId);
-        if (!c) return e;
-
-        const updatedTasks = [...c.tasks, { id: crypto.randomUUID(), text, done: false }];
-        const updatedCov = cov.map(x => (x.id === coverageId ? {...c, tasks: updatedTasks} : x));
-        return {...e, coverage: updatedCov};
-    }));
+    const entry = localEntries.find((e) => e.id === entryId);
+    if (!entry) return;
+    const cov = normalizedCoverageArray(entry);
+    const c = cov.find((x) => x.id === coverageId);
+    if (!c) return;
+    const updatedTasks = [...c.tasks, { id: crypto.randomUUID(), text, done: false }];
+    updateCoverage(entryId, coverageId, { tasks: updatedTasks });
   }
 
   function toggleTask(entryId, coverageId, taskId) {
-    setEntries(prevEntries => prevEntries.map(e => {
-        if (e.id !== entryId) return e;
-        const cov = normalizedCoverageArray(e);
-        const c = cov.find(x => x.id === coverageId);
-        if (!c) return e;
-
-        const updatedTasks = c.tasks.map(t => (t.id === taskId ? {...t, done: !t.done} : t));
-        const updatedCov = cov.map(x => (x.id === coverageId ? {...c, tasks: updatedTasks} : x));
-        return {...e, coverage: updatedCov};
-    }));
+    const entry = localEntries.find((e) => e.id === entryId);
+    if (!entry) return;
+    const cov = normalizedCoverageArray(entry);
+    const c = cov.find((x) => x.id === coverageId);
+    if (!c) return;
+    const updatedTasks = c.tasks.map((t) => (t.id === taskId ? { ...t, done: !t.done } : t));
+    updateCoverage(entryId, coverageId, { tasks: updatedTasks });
   }
 
   function removeTask(entryId, coverageId, taskId) {
-    setEntries(prevEntries => prevEntries.map(e => {
-        if (e.id !== entryId) return e;
-        const cov = normalizedCoverageArray(e);
-        const c = cov.find(x => x.id === coverageId);
-        if (!c) return e;
-        
-        const updatedTasks = c.tasks.filter(t => t.id !== taskId);
-        const updatedCov = cov.map(x => (x.id === coverageId ? {...c, tasks: updatedTasks} : x));
-        return {...e, coverage: updatedCov};
-    }));
+    const entry = localEntries.find((e) => e.id === entryId);
+    if (!entry) return;
+    const cov = normalizedCoverageArray(entry);
+    const c = cov.find((x) => x.id === coverageId);
+    if (!c) return;
+    const updatedTasks = c.tasks.filter((t) => t.id !== taskId);
+    updateCoverage(entryId, coverageId, { tasks: updatedTasks });
   }
 
-  // Flatten coverage items for display
-  const items = useMemo(() => {
-    const list = [];
-    for (const e of entries) {
-      const cov = normalizedCoverageArray(e);
-      for (const c of cov) {
-        // Only show items for time off that hasn't finished yet
-        if (new Date(e.end) >= new Date(todayISO)) {
-            list.push({
-                entryId: e.id,
-                by: e.name,
-                range: `${e.start} → ${e.end}`,
-                ...c
-            });
-        }
-      }
+  // Persist to localStorage so parent picks it up
+  useEffect(() => {
+    if (JSON.stringify(localEntries) !== JSON.stringify(entries)) {
+      localStorage.setItem("ooo_entries", JSON.stringify(localEntries));
     }
-    return list;
-  }, [entries]);
-
+  }, [localEntries, entries]);
 
   if (items.length === 0) {
-    return <div className="text-sm text-gray-500 italic">No active coverage items need attention.</div>;
+    return <div className="text-sm text-gray-500">No coverage items yet.</div>;
   }
 
   return (
-    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {items.map((x) => (
-        <div key={x.id} className="border rounded-xl p-4 bg-gray-50 shadow-lg">
-          <div className="text-xs text-gray-500 mb-1">
-            Owner OOO: <span className="font-medium text-indigo-800">{x.by}</span>
-            <span className="ml-2 text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">{x.range}</span>
+        <div key={x.id} className="border rounded-xl p-4 bg-white shadow-sm">
+          <div className="text-sm text-gray-500 mb-1">
+            Owner OOO: <span className="font-medium text-gray-800">{x.by}</span>
           </div>
 
           {/* Title + link */}
-          <div className="text-lg font-bold mb-2 mt-1">
+          <div className="text-lg font-semibold mb-2">
             {x.link ? (
               <a href={x.link} target="_blank" rel="noreferrer" className="text-indigo-700 hover:underline">
                 {x.title || "Untitled"}
@@ -809,42 +656,49 @@ function CoverageBoard({ entries, setEntries }) {
             )}
           </div>
 
+          <div className="text-xs text-gray-500 mb-3">{x.range}</div>
+
+          {/* Link editor */}
+          <div className="grid gap-1 mb-3">
+            <label className="text-xs font-medium text-gray-600">Salesforce / Deal Link</label>
+            <input
+              className="border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 ring-indigo-500"
+              placeholder="https://yourinstance.lightning.force.com/..."
+              value={x.link}
+              onChange={(e) => updateCoverage(x.entryId, x.id, { link: e.target.value })}
+            />
+          </div>
+
           {/* Notes */}
-          <div className="grid gap-1 mb-4 border-t pt-4">
-            <label className="text-xs font-semibold text-gray-600">Notes / Context (Click to edit)</label>
+          <div className="grid gap-1 mb-3">
+            <label className="text-xs font-medium text-gray-600">Notes</label>
             <textarea
               rows={3}
-              className="border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 ring-indigo-500 bg-white"
-              placeholder="What needs to be done on this item?"
+              className="border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 ring-indigo-500"
+              placeholder="What needs to be done on this deal?"
               value={x.notes}
               onChange={(e) => updateCoverage(x.entryId, x.id, { notes: e.target.value })}
             />
           </div>
 
           {/* Checklist */}
-          <div className="grid gap-2 border-t pt-4">
-            <div className="text-sm font-semibold">Action Checklist</div>
+          <div className="grid gap-2">
+            <div className="text-sm font-medium">Checklist</div>
             <div className="flex flex-col gap-2">
               {(x.tasks || []).map((t) => (
-                <label key={t.id} className="flex items-center gap-3 text-sm p-1 rounded-lg hover:bg-white transition-colors">
+                <label key={t.id} className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
                     checked={!!t.done}
                     onChange={() => toggleTask(x.entryId, x.id, t.id)}
-                    className="form-checkbox h-4 w-4 text-indigo-600 rounded"
                   />
-                  <span className={t.done ? "line-through text-gray-500 flex-1" : "flex-1"}>
-                      {t.text}
-                  </span>
+                  <span className={t.done ? "line-through text-gray-500" : ""}>{t.text}</span>
                   <button
                     type="button"
-                    className="text-xs text-red-600 hover:text-red-800 shrink-0"
+                    className="ml-auto text-xs text-red-600 hover:underline"
                     onClick={() => removeTask(x.entryId, x.id, t.id)}
-                    title="Remove Task"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 10-2 0v6a1 1 0 102 0V8z" clipRule="evenodd" />
-                    </svg>
+                    remove
                   </button>
                 </label>
               ))}
@@ -863,7 +717,7 @@ function AddTaskRow({ onAdd }) {
   const [text, setText] = useState("");
   return (
     <form
-      className="flex items-center gap-2 mt-4"
+      className="flex items-center gap-2"
       onSubmit={(e) => {
         e.preventDefault();
         if (text.trim()) onAdd(text.trim());
@@ -876,12 +730,16 @@ function AddTaskRow({ onAdd }) {
         value={text}
         onChange={(e) => setText(e.target.value)}
       />
-      <button
-        className="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shrink-0"
-        type="submit"
-      >
+      <button className="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700" type="submit">
         Add
       </button>
     </form>
   );
 }
+""")
+
+out_path = "/mnt/data/App.jsx"
+with open(out_path, "w") as f:
+  f.write(code)
+
+out_path
