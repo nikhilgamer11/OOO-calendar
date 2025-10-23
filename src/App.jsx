@@ -38,7 +38,6 @@ export default function App() {
       <header className="bg-white border-b sticky top-0 z-10">
         <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between">
           <h1 className="text-2xl font-bold tracking-tight">Team OOO & Coverage Tracker</h1>
-          <span className="text-xs text-gray-500">Vite + React + Tailwind</span>
         </div>
       </header>
 
