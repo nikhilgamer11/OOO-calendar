@@ -1,438 +1,234 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, query, addDoc, serverTimestamp, orderBy } from 'firebase/firestore';
+import React, { useMemo, useState } from "react";
 
-// --- GLOBAL VARIABLES (Provided by the Canvas Environment) ---
-// These variables are required for Firebase to connect and authenticate.
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-// --- END GLOBAL VARIABLES ---
+function cx(...a) { return a.filter(Boolean).join(" "); }
+const today = new Date().toISOString().slice(0, 10);
 
-// Utility function to format dates nicely
-const formatDate = (dateString) => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-};
-<div className="p-4 rounded-xl bg-blue-600 text-white">Tailwind is working</div>
-
-// Hook to manage Firebase services and authentication state
-const useFirebase = () => {
-  const [db, setDb] = useState(null);
-  const [auth, setAuth] = useState(null);
-  const [userId, setUserId] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!Object.keys(firebaseConfig).length) {
-      console.error("Firebase config is missing. Cannot initialize.");
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const app = initializeApp(firebaseConfig);
-      const firestore = getFirestore(app);
-      const authService = getAuth(app);
-
-      setDb(firestore);
-      setAuth(authService);
-
-      // Authenticate user
-      const authenticate = async (auth) => {
-        if (initialAuthToken) {
-          await signInWithCustomToken(auth, initialAuthToken);
-        } else {
-          await signInAnonymously(auth);
-        }
-      };
-
-      authenticate(authService).catch(error => {
-        console.error("Firebase Auth Error:", error);
-      });
-
-      // Set up auth state observer
-      const unsubscribe = onAuthStateChanged(authService, (user) => {
-        if (user) {
-          setUserId(user.uid);
-        } else {
-          // Fallback for unauthenticated state (shouldn't happen with our setup)
-          setUserId(crypto.randomUUID());
-        }
-        setLoading(false);
-      });
-
-      return () => unsubscribe();
-
-    } catch (e) {
-      console.error("Error initializing Firebase:", e);
-      setLoading(false);
-    }
-  }, []);
-
-  return { db, auth, userId, loading };
-};
-
-// Hook to fetch and manage real-time vacation data
-const useVacations = (db, userId) => {
-  const [vacations, setVacations] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!db || !userId) return;
-
-    // Data path for shared/public data
-    const collectionPath = `/artifacts/${appId}/public/data/vacation_requests`;
-    const q = query(collection(db, collectionPath), orderBy('startDate'));
-
-    setLoading(true);
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const requests = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          // Convert Firestore Timestamps to strings if they exist
-          startDate: data.startDate?.toDate ? data.startDate.toDate().toISOString().split('T')[0] : data.startDate,
-          endDate: data.endDate?.toDate ? data.endDate.toDate().toISOString().split('T')[0] : data.endDate,
-        };
-      });
-      setVacations(requests);
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching vacations:", error);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [db, userId]);
-
-  // Grouping requests by month for the calendar view
-  const groupedVacations = useMemo(() => {
-    const groups = {};
-    vacations.forEach(v => {
-      if (v.startDate) {
-        // Use a simple YYYY-MM key for grouping
-        const monthKey = v.startDate.substring(0, 7); 
-        if (!groups[monthKey]) {
-          groups[monthKey] = [];
-        }
-        groups[monthKey].push(v);
-      }
-    });
-    // Sort by date key to ensure months are always in order
-    return Object.keys(groups).sort().reduce((obj, key) => {
-      // Sort requests within the month by start date
-      groups[key].sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
-      obj[key] = groups[key];
-      return obj;
-    }, {});
-  }, [vacations]);
-
-  return { vacations: groupedVacations, loading };
-};
-
-
-// --- COMPONENTS ---
-
-// 1. Component for submitting a new OOO request
-const OOOForm = ({ db, userId, userName }) => {
-  const [formData, setFormData] = useState({
-    name: userName,
-    startDate: '',
-    endDate: '',
-    coverageNotes: '',
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [message, setMessage] = useState('');
-
-  // Update form data and keep the name field tied to the current user's name
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-  
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (isSubmitting || !db || !userId) return;
-
-    if (!formData.name || !formData.startDate || !formData.endDate || !formData.coverageNotes) {
-      setMessage('Please fill in all fields.');
-      return;
-    }
-
-    if (new Date(formData.startDate) > new Date(formData.endDate)) {
-        setMessage('Start date must be before or the same as the end date.');
-        return;
-    }
-
-    setIsSubmitting(true);
-    setMessage('');
-
-    try {
-      const collectionPath = `/artifacts/${appId}/public/data/vacation_requests`;
-      await addDoc(collection(db, collectionPath), {
-        ...formData,
-        userId: userId, // Record who made the request
-        status: 'Approved', // Simplified: assume immediate approval for this demo
-        startDate: new Date(formData.startDate), // Save as Firestore Timestamp
-        endDate: new Date(formData.endDate),   // Save as Firestore Timestamp
-        createdAt: serverTimestamp(),
-      });
-      setMessage('Vacation request submitted successfully! It is now visible to the team.');
-      setFormData({ // Reset form while keeping the name field
-        name: userName,
-        startDate: '',
-        endDate: '',
-        coverageNotes: '',
-      });
-    } catch (error) {
-      console.error("Error adding document: ", error);
-      setMessage('Failed to submit request. Check console for details.');
-    } finally {
-      setIsSubmitting(false);
-      setTimeout(() => setMessage(''), 5000); // Clear message after 5 seconds
-    }
-  };
-
-  return (
-    <div className="bg-white p-6 rounded-xl shadow-lg border border-indigo-100 h-full">
-      <h2 className="text-2xl font-bold text-indigo-700 mb-4 border-b pb-2">Submit Time Off Request</h2>
-      <p className="text-sm text-gray-600 mb-4">Current User ID: <span className="font-mono text-xs bg-gray-100 p-1 rounded">{userId}</span></p>
-      
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Name (Read-Only based on current user) */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Your Name</label>
-          <input
-            type="text"
-            name="name"
-            value={formData.name}
-            onChange={handleChange}
-            className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm p-2 bg-gray-50 focus:border-indigo-500"
-            required
-            readOnly // Prevent user from changing their user ID's name
-          />
-        </div>
-
-        {/* Start Date */}
-        <div>
-          <label htmlFor="startDate" className="block text-sm font-medium text-gray-700">Start Date</label>
-          <input
-            type="date"
-            id="startDate"
-            name="startDate"
-            value={formData.startDate}
-            onChange={handleChange}
-            className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm p-2 focus:border-indigo-500 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-            required
-          />
-        </div>
-
-        {/* End Date */}
-        <div>
-          <label htmlFor="endDate" className="block text-sm font-medium text-gray-700">End Date</label>
-          <input
-            type="date"
-            id="endDate"
-            name="endDate"
-            value={formData.endDate}
-            onChange={handleChange}
-            className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm p-2 focus:border-indigo-500 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-            required
-          />
-        </div>
-
-        {/* Coverage Notes (Replaces Spreadsheet Tab) */}
-        <div>
-          <label htmlFor="coverageNotes" className="block text-sm font-medium text-gray-700">Coverage & Handoff Notes</label>
-          <textarea
-            id="coverageNotes"
-            name="coverageNotes"
-            rows="4"
-            value={formData.coverageNotes}
-            onChange={handleChange}
-            placeholder="e.g., Contact Mike for critical support. The Q3 report is on the shared drive."
-            className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm p-3 focus:border-indigo-500 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-            required
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className={`w-full py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white transition duration-150 ${
-            isSubmitting
-              ? 'bg-indigo-400 cursor-not-allowed'
-              : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'
-          }`}
-        >
-          {isSubmitting ? 'Submitting...' : 'Submit Request'}
-        </button>
-      </form>
-
-      {message && (
-        <div className={`mt-4 p-3 rounded-lg text-sm ${message.includes('successfully') ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-          {message}
-        </div>
-      )}
-    </div>
-  );
-};
-
-
-// 2. Component for the calendar view
-const CalendarView = ({ groupedVacations, loading }) => {
-    // Utility to convert YYYY-MM to Month Name YYYY
-    const formatMonthKey = (key) => {
-        const [year, month] = key.split('-');
-        const date = new Date(year, month - 1);
-        return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    };
-
-    if (loading) {
-        return <div className="text-center p-8 text-indigo-600">Loading team calendar...</div>;
-    }
-
-    const monthKeys = Object.keys(groupedVacations);
-
-    if (monthKeys.length === 0) {
-        return (
-            <div className="p-8 text-center text-gray-500 bg-white rounded-xl shadow-lg border border-indigo-100">
-                <p>No vacation requests found yet. Be the first to submit one!</p>
-            </div>
-        );
-    }
-
-    return (
-        <div className="space-y-6">
-            {monthKeys.map(monthKey => (
-                <div key={monthKey} className="bg-white rounded-xl shadow-lg border border-indigo-100 overflow-hidden">
-                    {/* Month Header */}
-                    <div className="bg-indigo-50 p-4 border-b border-indigo-200">
-                        <h3 className="text-xl font-semibold text-indigo-800">{formatMonthKey(monthKey)}</h3>
-                    </div>
-
-                    {/* Request List */}
-                    <div className="divide-y divide-gray-100">
-                        {groupedVacations[monthKey].map(request => (
-                            <div key={request.id} className="p-4 hover:bg-gray-50 transition duration-100">
-                                <div className="flex justify-between items-center mb-1">
-                                    {/* Name and Dates */}
-                                    <div className="text-lg font-bold text-gray-900 flex items-center">
-                                        <span className="h-3 w-3 rounded-full bg-indigo-500 mr-2 animate-pulse"></span>
-                                        {request.name} (OOO)
-                                    </div>
-                                    <div className="text-sm font-medium text-indigo-600 bg-indigo-100 px-3 py-1 rounded-full">
-                                        {formatDate(request.startDate)} to {formatDate(request.endDate)}
-                                    </div>
-                                </div>
-                                
-                                {/* Coverage Details */}
-                                <div className="mt-2 p-3 bg-gray-100 rounded-lg text-sm text-gray-700">
-                                    <span className="font-semibold text-gray-800">Coverage Notes:</span> {request.coverageNotes}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            ))}
-        </div>
-    );
-};
-
-// 3. (Mock) Component for Google Calendar Sync
-const GoogleCalendarMock = () => {
-    const fetchGoogleCalendarEvents = () => {
-        // --- REAL-WORLD GOOGLE CALENDAR INTEGRATION POINT ---
-        // In a deployed application, this function would:
-        // 1. Check for a Google OAuth token.
-        // 2. If no token, initiate the OAuth sign-in flow (User grants permission).
-        // 3. Call the Google Calendar API (events:list) to fetch "Out of Office" events.
-        // 4. Transform the API response (event start/end/summary) into the format needed for Firestore.
-        // 5. Save the events to the '/vacation_requests' Firestore collection.
-        // ---------------------------------------------------
-        alert('This button is ready for Google Calendar API integration! Currently, please use the form to submit time off.');
-    };
-
-    return (
-        <div className="p-4 bg-yellow-50 rounded-lg shadow border border-yellow-200">
-            <h4 className="font-semibold text-yellow-800 mb-2">Google Calendar Integration</h4>
-            <p className="text-sm text-yellow-700 mb-3">The app is set up for manual entry. For automatic sync, click below:</p>
-            <button
-                onClick={fetchGoogleCalendarEvents}
-                className="w-full py-2 px-4 rounded-lg shadow-md text-sm font-medium text-yellow-900 transition duration-150 bg-yellow-300 hover:bg-yellow-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
-            >
-                Connect & Sync from Google Calendar (Mock)
-            </button>
-        </div>
-    );
-};
-
-
-// 4. Main Application Component
 export default function App() {
-  const { db, userId, loading } = useFirebase();
-  const { vacations, loading: loadingVacations } = useVacations(db, userId);
-  
-  // Simple state to hold a name for the form (can be expanded to pull from a profile store)
-  const [userName, setUserName] = useState('User ' + (userId || 'Unknown').substring(0, 4));
+  const [entries, setEntries] = useState([
+    { id: crypto.randomUUID(), name: "Alex", start: today, end: today, type: "Vacation", notes: "Day off" },
+  ]);
+  const [form, setForm] = useState({ name: "", start: today, end: today, type: "Vacation", notes: "" });
+  const [filter, setFilter] = useState({ query: "", type: "All" });
 
-  useEffect(() => {
-      if (userId && userName.startsWith('User ')) {
-          // Update the mock name once we have a confirmed user ID
-          setUserName('Team Member ' + userId.substring(0, 4));
-      }
-  }, [userId, userName]);
+  const filtered = useMemo(() => {
+    return entries.filter(e => {
+      const t = (s) => (s || "").toLowerCase();
+      const text = [e.name, e.type, e.notes].join(" ");
+      const matchesText = !filter.query || t(text).includes(t(filter.query));
+      const matchesType = filter.type === "All" || e.type === filter.type;
+      return matchesText && matchesType;
+    });
+  }, [entries, filter]);
 
+  function addEntry(ev) {
+    ev.preventDefault();
+    const s = new Date(form.start), e = new Date(form.end);
+    if (e < s) { alert("End date cannot be before start date."); return; }
+    setEntries((prev) => [...prev, { id: crypto.randomUUID(), ...form }]);
+    setForm((f) => ({ ...f, notes: "" }));
+  }
 
-  if (loading) {
-    return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-50">
-            <div className="text-lg font-semibold text-indigo-600 p-8 rounded-xl shadow-md bg-white">
-                Initializing application and authentication...
-            </div>
-        </div>
-    );
+  function removeEntry(id) {
+    setEntries((prev) => prev.filter((e) => e.id !== id));
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
-      <header className="mb-8">
-        <h1 className="text-4xl font-extrabold text-indigo-800 tracking-tight">Team OOO & Coverage Tracker</h1>
-        <p className="mt-1 text-gray-500">Real-time vacation visibility powered by Firebase.</p>
+    <div className="min-h-screen text-gray-900">
+      <header className="bg-white border-b sticky top-0 z-10">
+        <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between">
+          <h1 className="text-2xl font-bold tracking-tight">Team OOO & Coverage Tracker</h1>
+          <span className="text-xs text-gray-500">Vite + React + Tailwind</span>
+        </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Left Column: Form and Tools */}
-        <div className="lg:col-span-1 space-y-6">
-            <GoogleCalendarMock />
-            <OOOForm 
-                db={db} 
-                userId={userId} 
-                userName={userName} 
-            />
-        </div>
+      <main className="mx-auto max-w-6xl px-4 py-8 grid gap-6 md:grid-cols-2">
+        {/* left */}
+        <section className="bg-white rounded-2xl shadow-soft p-5">
+          <h2 className="text-lg font-semibold mb-2">Google Calendar Integration</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            The app is set up for manual entry. Connect for automatic sync (mock).
+          </p>
+          <button
+            className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm hover:bg-gray-50"
+            type="button"
+            onClick={() => alert("Mock connect")}
+          >
+            Connect & Sync from Google Calendar (Mock)
+          </button>
 
-        {/* Right Column: Calendar View */}
-        <div className="lg:col-span-2">
-            <h2 className="text-3xl font-bold text-gray-700 mb-4 tracking-tight">Team Calendar View</h2>
-            {loadingVacations ? (
-                <div className="text-center p-8 text-indigo-600 bg-white rounded-xl shadow-lg border border-indigo-100">Loading calendar data...</div>
-            ) : (
-                <CalendarView 
-                    groupedVacations={vacations} 
-                    loading={loadingVacations} 
+          <h2 className="text-lg font-semibold mt-6 mb-2">Submit Time Off Request</h2>
+          <form className="grid gap-4" onSubmit={addEntry}>
+            <div className="grid gap-1">
+              <label className="text-sm font-medium">Your Name</label>
+              <input
+                className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-blue-500"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="e.g., Nikhil"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-1">
+                <label className="text-sm font-medium">Start Date</label>
+                <input
+                  type="date"
+                  className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-blue-500"
+                  value={form.start}
+                  onChange={(e) => setForm({ ...form, start: e.target.value })}
+                  required
                 />
+              </div>
+              <div className="grid gap-1">
+                <label className="text-sm font-medium">End Date</label>
+                <input
+                  type="date"
+                  className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-blue-500"
+                  value={form.end}
+                  onChange={(e) => setForm({ ...form, end: e.target.value })}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-1">
+              <label className="text-sm font-medium">Type</label>
+              <select
+                className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-blue-500"
+                value={form.type}
+                onChange={(e) => setForm({ ...form, type: e.target.value })}
+              >
+                <option>Vacation</option>
+                <option>Sick Leave</option>
+                <option>Public Holiday</option>
+                <option>Training</option>
+                <option>Other</option>
+              </select>
+            </div>
+
+            <div className="grid gap-1">
+              <label className="text-sm font-medium">Coverage & Handoff Notes</label>
+              <textarea
+                className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-blue-500"
+                rows="3"
+                placeholder="e.g., Contact Mike for support. Q3 report is on Drive."
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              />
+            </div>
+
+            <button
+              className="rounded-xl bg-blue-600 text-white px-4 py-2 font-medium hover:bg-blue-700 active:bg-blue-800"
+              type="submit"
+            >
+              Submit Request
+            </button>
+          </form>
+        </section>
+
+        {/* right */}
+        <section className="bg-white rounded-2xl shadow-soft p-5">
+          <h2 className="text-lg font-semibold mb-4">Search & Filter</h2>
+          <input
+            className="border rounded-lg px-3 py-2 outline-none focus:ring-2 ring-blue-500 w-full"
+            placeholder="Search by name, note, or type…"
+            value={filter.query}
+            onChange={(e) => setFilter({ ...filter, query: e.target.value })}
+          />
+          <div className="flex gap-2 flex-wrap mt-3">
+            {["All", "Vacation", "Sick Leave", "Public Holiday", "Training", "Other"].map((t) => (
+              <button
+                key={t}
+                type="button"
+                className={cx(
+                  "px-3 py-1.5 rounded-full border text-sm",
+                  filter.type === t ? "bg-gray-900 text-white border-gray-900" : "bg-white hover:bg-gray-50"
+                )}
+                onClick={() => setFilter({ ...filter, type: t })}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+
+          <h3 className="font-semibold mt-6 mb-2">Team Calendar View</h3>
+          <ul className="divide-y">
+            {filtered.length === 0 && (
+              <li className="py-6 text-gray-500 text-sm">No entries yet.</li>
             )}
-        </div>
-      </div>
-      
-      <footer className="mt-12 text-center text-sm text-gray-400 border-t pt-4">
-        Powered by React and Google Firestore.
-      </footer>
+            {filtered.map((e) => (
+              <li key={e.id} className="py-4 flex items-start justify-between gap-4">
+                <div>
+                  <div className="font-medium">{e.name}</div>
+                  <div className="text-sm text-gray-600">{e.type} • {e.start} → {e.end}</div>
+                  {e.notes && <div className="text-sm mt-1">{e.notes}</div>}
+                </div>
+                <button className="text-red-600 hover:text-red-700 text-sm" onClick={() => removeEntry(e.id)}>
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="md:col-span-2 bg-white rounded-2xl shadow-soft p-5">
+          <h2 className="text-lg font-semibold mb-3">Mini Calendar (current month)</h2>
+          <MiniCalendar entries={entries} />
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function MiniCalendar({ entries }) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0);
+  const startWeekday = first.getDay();
+  const daysInMonth = last.getDate();
+
+  const marked = new Set();
+  for (const e of entries) {
+    const s = new Date(e.start);
+    const ed = new Date(e.end);
+    const start = new Date(Math.max(s, first));
+    const end = new Date(Math.min(ed, last));
+    for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      marked.add(d.toISOString().slice(0, 10));
+    }
+  }
+
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  return (
+    <div className="grid grid-cols-7 gap-2">
+      {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((w) => (
+        <div key={w} className="text-center text-xs font-semibold text-gray-600">{w}</div>
+      ))}
+      {cells.map((d, i) => {
+        const iso = d
+          ? new Date(new Date().getFullYear(), new Date().getMonth(), d).toISOString().slice(0, 10)
+          : "";
+        const isMarked = d && marked.has(iso);
+        return (
+          <div
+            key={i}
+            className={cx(
+              "aspect-square rounded-xl border flex items-center justify-center text-sm",
+              d ? "bg-white" : "bg-transparent border-transparent",
+              isMarked && "bg-blue-50 border-blue-300"
+            )}
+            title={iso}
+          >
+            {d ?? ""}
+          </div>
+        );
+      })}
     </div>
   );
 }
