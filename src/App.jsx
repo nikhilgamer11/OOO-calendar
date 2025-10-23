@@ -4,11 +4,46 @@ const cx = (...a) => a.filter(Boolean).join(" ");
 const todayISO = new Date().toISOString().slice(0, 10);
 
 // 👉 Optional starter data (you can delete or edit these)
+// 👉 Optional starter data (can delete/modify later)
 const seed = [
-  { id: crypto.randomUUID(), name: "Alex", start: todayISO, end: todayISO, type: "Vacation", notes: "Day off" },
-  // example: multi-day OOO with coverage needs
-  { id: crypto.randomUUID(), name: "Priya", start: isoNDaysFromNow(1), end: isoNDaysFromNow(3), type: "Sick Leave", notes: "Handover to Mike", coverage: ["Deal: ACME Q4 renewals", "Support: Tier-2 backlog triage"] },
+  {
+    id: crypto.randomUUID(),
+    name: "Alex",
+    start: todayISO,
+    end: todayISO,
+    type: "Vacation",
+    notes: "Day off"
+  },
+  {
+    id: crypto.randomUUID(),
+    name: "Priya",
+    start: isoNDaysFromNow(1),
+    end: isoNDaysFromNow(3),
+    type: "Sick Leave",
+    notes: "Handover to Mike",
+    // New structured coverage items
+    coverage: [
+      {
+        id: crypto.randomUUID(),
+        title: "Deal: ACME Q4 renewals",
+        link: "https://yourinstance.lightning.force.com/lightning/r/Opportunity/006XXXXXXXXXXXX/view",
+        notes: "Renewal due EOM. Confirm pricing w/ finance.",
+        tasks: [
+          { id: crypto.randomUUID(), text: "Email decision-maker", done: false },
+          { id: crypto.randomUUID(), text: "Update next steps", done: true }
+        ]
+      },
+      {
+        id: crypto.randomUUID(),
+        title: "Support: Tier-2 backlog triage",
+        link: "",
+        notes: "",
+        tasks: []
+      }
+    ]
+  }
 ];
+
 
 function isoNDaysFromNow(n) {
   const d = new Date();
@@ -402,15 +437,201 @@ function MiniCalendar({ entries }) {
 }
 
 function CoverageBoard({ entries }) {
-  // flatten all coverage items across entries
-  const items = [];
-  for (const e of entries) {
-    if (Array.isArray(e.coverage)) {
-      for (const c of e.coverage) {
-        items.push({ by: e.name, item: c, range: `${e.start} → ${e.end}` });
+  const [localEntries, setLocalEntries] = useState(entries);
+
+  // Keep in sync with parent state (and persist via parent's effect)
+  useEffect(() => setLocalEntries(entries), [entries]);
+
+  // Helper: normalize a single entry's coverage array to objects
+  function normalizedCoverageArray(entry) {
+    const list = Array.isArray(entry.coverage) ? entry.coverage : [];
+    return list.map((c) => {
+      if (typeof c === "string") {
+        return { id: crypto.randomUUID(), title: c, link: "", notes: "", tasks: [] };
       }
+      return {
+        id: c.id || crypto.randomUUID(),
+        title: c.title || "",
+        link: c.link || "",
+        notes: c.notes || "",
+        tasks: Array.isArray(c.tasks)
+          ? c.tasks.map((t) => ({ id: t.id || crypto.randomUUID(), text: t.text || "", done: !!t.done }))
+          : []
+      };
+    });
+  }
+
+  // Flatten coverage items for display
+  const items = [];
+  for (const e of localEntries) {
+    const cov = normalizedCoverageArray(e);
+    for (const c of cov) {
+      items.push({
+        entryId: e.id,
+        by: e.name,
+        range: `${e.start} → ${e.end}`,
+        ...c
+      });
     }
   }
+
+  // Update helpers
+  function updateCoverage(entryId, coverageId, patch) {
+    const next = localEntries.map((e) => {
+      if (e.id !== entryId) return e;
+      const cov = normalizedCoverageArray(e).map((c) => (c.id === coverageId ? { ...c, ...patch } : c));
+      return { ...e, coverage: cov };
+    });
+    setLocalEntries(next);
+  }
+
+  function addTask(entryId, coverageId, text) {
+    const entry = localEntries.find((e) => e.id === entryId);
+    if (!entry) return;
+    const cov = normalizedCoverageArray(entry);
+    const c = cov.find((x) => x.id === coverageId);
+    if (!c) return;
+    const updatedTasks = [...c.tasks, { id: crypto.randomUUID(), text, done: false }];
+    updateCoverage(entryId, coverageId, { tasks: updatedTasks });
+  }
+
+  function toggleTask(entryId, coverageId, taskId) {
+    const entry = localEntries.find((e) => e.id === entryId);
+    if (!entry) return;
+    const cov = normalizedCoverageArray(entry);
+    const c = cov.find((x) => x.id === coverageId);
+    if (!c) return;
+    const updatedTasks = c.tasks.map((t) => (t.id === taskId ? { ...t, done: !t.done } : t));
+    updateCoverage(entryId, coverageId, { tasks: updatedTasks });
+  }
+
+  function removeTask(entryId, coverageId, taskId) {
+    const entry = localEntries.find((e) => e.id === entryId);
+    if (!entry) return;
+    const cov = normalizedCoverageArray(entry);
+    const c = cov.find((x) => x.id === coverageId);
+    if (!c) return;
+    const updatedTasks = c.tasks.filter((t) => t.id !== taskId);
+    updateCoverage(entryId, coverageId, { tasks: updatedTasks });
+  }
+
+  // Push changes up to parent (so localStorage persists via parent's effect)
+  useEffect(() => {
+    // If nothing changed, skip
+    if (JSON.stringify(localEntries) !== JSON.stringify(entries)) {
+      // Parent state setter is in the App component, so we dispatch a synthetic event through window.
+      // Easiest approach: store directly to localStorage so the parent picks it up on next render.
+      localStorage.setItem("ooo_entries", JSON.stringify(localEntries));
+    }
+  }, [localEntries, entries]);
+
+  if (items.length === 0) {
+    return <div className="text-sm text-gray-500">No coverage items yet.</div>;
+  }
+
+  return (
+    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {items.map((x) => (
+        <div key={x.id} className="border rounded-xl p-4 bg-white shadow-sm">
+          <div className="text-sm text-gray-500 mb-1">
+            Owner OOO: <span className="font-medium text-gray-800">{x.by}</span>
+          </div>
+
+          {/* Title + link */}
+          <div className="text-lg font-semibold mb-2">
+            {x.link ? (
+              <a href={x.link} target="_blank" rel="noreferrer" className="text-indigo-700 hover:underline">
+                {x.title || "Untitled"}
+              </a>
+            ) : (
+              x.title || "Untitled"
+            )}
+          </div>
+
+          <div className="text-xs text-gray-500 mb-3">{x.range}</div>
+
+          {/* Link editor */}
+          <div className="grid gap-1 mb-3">
+            <label className="text-xs font-medium text-gray-600">Salesforce / Deal Link</label>
+            <input
+              className="border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 ring-indigo-500"
+              placeholder="https://yourinstance.lightning.force.com/..."
+              value={x.link}
+              onChange={(e) => updateCoverage(x.entryId, x.id, { link: e.target.value })}
+            />
+          </div>
+
+          {/* Notes */}
+          <div className="grid gap-1 mb-3">
+            <label className="text-xs font-medium text-gray-600">Notes</label>
+            <textarea
+              rows={3}
+              className="border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 ring-indigo-500"
+              placeholder="What needs to be done on this deal?"
+              value={x.notes}
+              onChange={(e) => updateCoverage(x.entryId, x.id, { notes: e.target.value })}
+            />
+          </div>
+
+          {/* Checklist */}
+          <div className="grid gap-2">
+            <div className="text-sm font-medium">Checklist</div>
+            <div className="flex flex-col gap-2">
+              {(x.tasks || []).map((t) => (
+                <label key={t.id} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={!!t.done}
+                    onChange={() => toggleTask(x.entryId, x.id, t.id)}
+                  />
+                  <span className={t.done ? "line-through text-gray-500" : ""}>{t.text}</span>
+                  <button
+                    type="button"
+                    className="ml-auto text-xs text-red-600 hover:underline"
+                    onClick={() => removeTask(x.entryId, x.id, t.id)}
+                  >
+                    remove
+                  </button>
+                </label>
+              ))}
+            </div>
+
+            {/* Add new task */}
+            <AddTaskRow onAdd={(text) => text && addTask(x.entryId, x.id, text)} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AddTaskRow({ onAdd }) {
+  const [text, setText] = useState("");
+  return (
+    <form
+      className="flex items-center gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (text.trim()) onAdd(text.trim());
+        setText("");
+      }}
+    >
+      <input
+        className="border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 ring-indigo-500 w-full"
+        placeholder="Add a checklist item…"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <button
+        className="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+        type="submit"
+      >
+        Add
+      </button>
+    </form>
+  );
+}
+
 
   if (items.length === 0) {
     return <div className="text-sm text-gray-500">No coverage items yet.</div>;
