@@ -405,7 +405,8 @@ export default function App() {
               </p>
               <ul className="divide-y">
                 {entries.length === 0 && <li className="py-6 text-gray-500 italic">No time-off requests submitted yet.</li>}
-                {filtered.map((e) => (
+                {/* FIX: Use entries list instead of filtered list here */}
+                {entries.map((e) => ( 
                   <li key={e.id} className="py-4">
                     <RequestItem entry={e} setEntries={setEntries} removeEntry={removeEntry} />
                   </li>
