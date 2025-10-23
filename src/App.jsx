@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
+<div className="p-4 rounded-xl bg-blue-600 text-white">Tailwind is working</div>
 
+import React, { useMemo, useState } from "react";
 function cx(...a) { return a.filter(Boolean).join(" "); }
 const today = new Date().toISOString().slice(0, 10);
 
