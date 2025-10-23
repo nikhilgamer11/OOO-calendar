@@ -1,43 +1,50 @@
-	
-0	
-id	"import-AJ-2025-10-01"
-name	"AJ"
-start	"2025-10-01"
-end	"2025-10-03"
-type	"Vacation"
-notes	"Imported from spreadsheet (October)"
-1	
-id	"import-AJ-2025-10-16"
-name	"AJ"
-start	"2025-10-16"
-end	"2025-10-17"
-type	"Vacation"
-notes	"Imported from spreadsheet (October)"
-2	
-id	"import-Cole-2025-10-16"
-name	"Cole"
-start	"2025-10-16"
-end	"2025-10-17"
-type	"Vacation"
-notes	"Imported from spreadsheet (October)"
-3	
-id	"import-Cole-2025-10-20"
-name	"Cole"
-start	"2025-10-20"
-end	"2025-10-21"
-type	"Vacation"
-notes	"Imported from spreadsheet (October)"
-4	
-id	"import-JG-2025-10-17"
-name	"JG"
-start	"2025-10-17"
-end	"2025-10-17"
-type	"Vacation"
-notes	"Imported from spreadsheet (October)"
-5	
-id	"import-JG-2025-10-24"
-name	"JG"
-start	"2025-10-24"
-end	"2025-10-24"
-type	"Vacation"
-notes	"Imported from spreadsheet (October)"
+[
+  {
+    "id": "import-AJ-2025-10-01",
+    "name": "AJ",
+    "start": "2025-10-01",
+    "end": "2025-10-03",
+    "type": "Vacation",
+    "notes": "Imported from spreadsheet (October)"
+  },
+  {
+    "id": "import-AJ-2025-10-16",
+    "name": "AJ",
+    "start": "2025-10-16",
+    "end": "2025-10-17",
+    "type": "Vacation",
+    "notes": "Imported from spreadsheet (October)"
+  },
+  {
+    "id": "import-Cole-2025-10-16",
+    "name": "Cole",
+    "start": "2025-10-16",
+    "end": "2025-10-17",
+    "type": "Vacation",
+    "notes": "Imported from spreadsheet (October)"
+  },
+  {
+    "id": "import-Cole-2025-10-20",
+    "name": "Cole",
+    "start": "2025-10-20",
+    "end": "2025-10-21",
+    "type": "Vacation",
+    "notes": "Imported from spreadsheet (October)"
+  },
+  {
+    "id": "import-JG-2025-10-17",
+    "name": "JG",
+    "start": "2025-10-17",
+    "end": "2025-10-17",
+    "type": "Vacation",
+    "notes": "Imported from spreadsheet (October)"
+  },
+  {
+    "id": "import-JG-2025-10-24",
+    "name": "JG",
+    "start": "2025-10-24",
+    "end": "2025-10-24",
+    "type": "Vacation",
+    "notes": "Imported from spreadsheet (October)"
+  }
+]
